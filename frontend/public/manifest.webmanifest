@@ -1,0 +1,26 @@
+{
+  "name": "Campus Alertas",
+  "short_name": "Alertas",
+  "description": "Reporte agil de incidencias en campus universitario",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5faf9",
+  "theme_color": "#0f766e",
+  "lang": "es-PE",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
+

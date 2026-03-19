@@ -1,0 +1,35 @@
+# Global
+.DS_Store
+Thumbs.db
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Python backend
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/*.pyc
+backend/data/
+
+# Node frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/.pnpm-store/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+

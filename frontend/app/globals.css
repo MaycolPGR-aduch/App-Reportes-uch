@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #f5faf9;
+  --bg-accent: #e6f7f3;
+  --text-primary: #0f172a;
+  --text-muted: #475569;
+  --card: #ffffff;
+  --line: #cde5de;
+  --brand: #0f766e;
+  --brand-strong: #115e59;
+  --warning: #f97316;
+}
+
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background:
+    radial-gradient(1200px 400px at -10% -10%, #d6f4ee 0%, transparent 55%),
+    radial-gradient(900px 300px at 110% -10%, #fde1cc 0%, transparent 50%),
+    linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-accent) 100%);
+  color: var(--text-primary);
+  font-family: "Trebuchet MS", "Segoe UI", "Verdana", sans-serif;
+}
+
+.font-heading {
+  font-family: "Trebuchet MS", "Segoe UI", "Verdana", sans-serif;
+}
+
+.font-mono {
+  font-family: "Consolas", "Courier New", monospace;
+}
