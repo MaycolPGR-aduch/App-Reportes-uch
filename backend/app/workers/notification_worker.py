@@ -6,6 +6,7 @@ import time
 from sqlalchemy.orm import joinedload
 
 from app.core.config import get_settings
+from app.db import base as _models_registry  # noqa: F401
 from app.db.session import SessionLocal
 from app.models.enums import JobType
 from app.models.incident import Incident
@@ -83,4 +84,3 @@ def run_worker() -> None:
 
 if __name__ == "__main__":
     run_worker()
-

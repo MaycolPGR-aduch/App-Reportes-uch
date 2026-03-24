@@ -2,7 +2,16 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IncidentCategory, UserRole, createReport, login, registerUser } from "@/lib/api-client";
+import {
+  ApiHttpError,
+  IncidentCategory,
+  ReportImageAnalysis,
+  UserRole,
+  analyzeReportImage,
+  createReport,
+  login,
+  registerUser,
+} from "@/lib/api-client";
 
 const TOKEN_KEY = "campus_access_token";
 const ROLE_KEY = "campus_user_role";
@@ -39,6 +48,11 @@ export function ReportForm() {
   const [locationLoading, setLocationLoading] = useState(false);
 
   const [photo, setPhoto] = useState<File | null>(null);
+  const [analysis, setAnalysis] = useState<ReportImageAnalysis | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [allowNonIncidentOverride, setAllowNonIncidentOverride] = useState(false);
+  const [reportTitle, setReportTitle] = useState("");
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
@@ -165,6 +179,36 @@ export function ReportForm() {
     );
   };
 
+  const runImageAnalysis = async (file: File) => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    setAllowNonIncidentOverride(false);
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      formData.append("category", category);
+      if (description.trim()) {
+        formData.append("description", description.trim());
+      }
+
+      const authToken = mode === "AUTHENTICATED" ? token : null;
+      const result = await analyzeReportImage(authToken, formData);
+      setAnalysis(result);
+
+      if (result.suggested_title) {
+        setReportTitle(result.suggested_title);
+      }
+      if (result.predicted_category) {
+        setCategory(result.predicted_category);
+      }
+    } catch (error) {
+      setAnalysis(null);
+      setAnalysisError(error instanceof Error ? error.message : "No se pudo analizar la imagen");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode === "AUTHENTICATED" && !token) {
@@ -173,6 +217,24 @@ export function ReportForm() {
     }
     if (!photo) {
       setSubmitError("Adjunta una foto de evidencia.");
+      return;
+    }
+    if (analysisLoading) {
+      setSubmitError("Espera a que finalice el análisis de IA.");
+      return;
+    }
+    if (!analysis) {
+      setSubmitError("Primero analiza la imagen con IA antes de enviar.");
+      return;
+    }
+    if (!analysis.is_appropriate) {
+      setSubmitError("No puedes enviar este reporte porque la imagen fue marcada como no permitida.");
+      return;
+    }
+    if (!analysis.is_incident && !allowNonIncidentOverride) {
+      setSubmitError(
+        "La IA indica que no es incidencia. Si realmente lo es, usa el botón de confirmación.",
+      );
       return;
     }
     if (!coordinates) {
@@ -187,6 +249,10 @@ export function ReportForm() {
     }
 
     const formData = new FormData();
+    const sanitizedTitle = reportTitle.trim();
+    if (sanitizedTitle) {
+      formData.append("title", sanitizedTitle);
+    }
     formData.append("description", sanitizedDescription);
     formData.append("category", category);
     formData.append("latitude", String(coordinates.latitude));
@@ -207,8 +273,16 @@ export function ReportForm() {
         `${prefix} (${response.incident_id.slice(0, 8)}). Estado IA: ${response.ai_status}`,
       );
       setDescription("");
+      setReportTitle("");
       setPhoto(null);
+      setAnalysis(null);
+      setAllowNonIncidentOverride(false);
     } catch (error) {
+      if (error instanceof ApiHttpError && error.status === 401) {
+        handleLogout();
+        setSubmitError("Tu sesion expiro o el token es invalido. Inicia sesion nuevamente.");
+        return;
+      }
       setSubmitError(error instanceof Error ? error.message : "No se pudo enviar el reporte");
     } finally {
       setSubmitLoading(false);
@@ -363,7 +437,20 @@ export function ReportForm() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               capture="environment"
-              onChange={(event) => setPhoto(event.target.files?.[0] ?? null)}
+              onChange={async (event) => {
+                const selected = event.target.files?.[0] ?? null;
+                setPhoto(selected);
+                setSubmitError(null);
+                setSubmitSuccess(null);
+                setReportTitle("");
+                if (!selected) {
+                  setAnalysis(null);
+                  setAnalysisError(null);
+                  setAllowNonIncidentOverride(false);
+                  return;
+                }
+                await runImageAnalysis(selected);
+              }}
               className="hidden"
             />
             <button
@@ -385,6 +472,51 @@ export function ReportForm() {
                 alt="Vista previa de evidencia"
                 className="h-56 w-full rounded-xl border border-[var(--line)] object-cover"
               />
+            ) : null}
+            {analysisLoading ? (
+              <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+                Analizando imagen con IA...
+              </p>
+            ) : null}
+            {analysisError ? (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{analysisError}</p>
+            ) : null}
+            {analysis ? (
+              <div className="grid gap-2 rounded-xl border border-[var(--line)] bg-white p-3 text-xs">
+                <p className="font-semibold text-slate-800">
+                  Validación IA:{" "}
+                  {analysis.is_appropriate
+                    ? analysis.is_incident
+                      ? "Incidencia detectada"
+                      : "No parece incidencia"
+                    : "Contenido no permitido"}
+                </p>
+                {analysis.reason ? (
+                  <p className="text-slate-700">Motivo: {analysis.reason}</p>
+                ) : null}
+                {analysis.assigned_to ? (
+                  <p className="text-slate-700">Área sugerida: {analysis.assigned_to}</p>
+                ) : null}
+                {!analysis.is_appropriate ? (
+                  <p className="rounded-lg bg-red-50 px-2 py-1 text-red-700">
+                    Esta imagen no se puede enviar por política de contenido.
+                  </p>
+                ) : null}
+                {analysis.is_appropriate && !analysis.is_incident && !allowNonIncidentOverride ? (
+                  <button
+                    type="button"
+                    onClick={() => setAllowNonIncidentOverride(true)}
+                    className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600"
+                  >
+                    ¿Realmente se trata de una incidencia?
+                  </button>
+                ) : null}
+                {analysis.is_appropriate && !analysis.is_incident && allowNonIncidentOverride ? (
+                  <p className="rounded-lg bg-amber-50 px-2 py-1 text-amber-800">
+                    Confirmación manual activa: podrás enviar el reporte.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
 
@@ -409,6 +541,16 @@ export function ReportForm() {
 
           <div className="grid gap-3 rounded-2xl border border-[var(--line)] p-4">
             <p className="text-sm font-semibold text-slate-900">3. Descripcion breve</p>
+            <label className="grid gap-1 text-sm">
+              Título sugerido por IA (editable)
+              <input
+                className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
+                value={reportTitle}
+                onChange={(event) => setReportTitle(event.target.value)}
+                maxLength={120}
+                placeholder="Ejemplo: Cable expuesto en pabellón B"
+              />
+            </label>
             <label className="grid gap-1 text-sm">
               Categoria
               <select

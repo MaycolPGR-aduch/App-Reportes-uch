@@ -23,11 +23,13 @@ from app.models.enums import (
     UserStatus,
 )
 from app.models.evidence import IncidentEvidence
+from app.models.assignment import IncidentAssignment
 from app.models.incident import Incident
 from app.models.location import IncidentLocation
 from app.models.user import User
 from app.schemas.incident import (
     AIMetricOut,
+    AssignmentOut,
     EvidenceOut,
     IncidentDetail,
     IncidentListItem,
@@ -36,8 +38,10 @@ from app.schemas.incident import (
     NotificationOut,
 )
 from app.schemas.report import ReportCreateResponse, ReportValidation
+from app.schemas.report import ReportImageAnalysisResponse
+from app.services.ai import classify_incident
 from app.services.jobs import enqueue_job
-from app.services.sanitizer import sanitize_description
+from app.services.sanitizer import sanitize_description, sanitize_title
 from app.services.storage import LocalStorageProvider
 
 router = APIRouter(tags=["reports"])
@@ -103,9 +107,27 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
             confidence=m.confidence,
             latency_ms=m.latency_ms,
             reasoning_summary=m.reasoning_summary,
+            raw_response=m.raw_response,
             created_at=m.created_at,
         )
-        for m in incident.ai_metrics
+        for m in sorted(incident.ai_metrics, key=lambda x: x.created_at, reverse=True)
+    ]
+    assignments = [
+        AssignmentOut(
+            id=a.id,
+            responsible_id=a.responsible_id,
+            responsible_name=a.responsible.full_name,
+            responsible_area=a.responsible.area_name,
+            responsible_email=a.responsible.email,
+            status=a.status,
+            notes=a.notes,
+            assigned_at=a.assigned_at,
+            due_at=a.due_at,
+            completed_at=a.completed_at,
+            created_at=a.created_at,
+        )
+        for a in sorted(incident.assignments, key=lambda x: x.created_at, reverse=True)
+        if a.responsible is not None
     ]
     notifications = [
         NotificationOut(
@@ -133,6 +155,7 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
         location=location,
         evidences=evidences,
         ai_metrics=ai_metrics,
+        assignments=assignments,
         notifications=notifications,
     )
 
@@ -143,16 +166,21 @@ async def create_report(
     category: Annotated[IncidentCategory, Form(...)],
     latitude: Annotated[float, Form(...)],
     longitude: Annotated[float, Form(...)],
+    photo: UploadFile = File(...),
+    title: Annotated[str | None, Form()] = None,
     accuracy_m: Annotated[float | None, Form()] = None,
     location_reference: Annotated[str | None, Form()] = None,
-    photo: UploadFile = File(...),
     trace_id: str | None = Header(default=None, alias="X-Trace-Id"),
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> ReportCreateResponse:
     settings = get_settings()
 
+    sanitized_title = sanitize_title(title or "")
     sanitized_description = sanitize_description(description)
+    if sanitized_title:
+        sanitized_description = f"{sanitized_title}. {sanitized_description}"[:280]
+
     try:
         _ = ReportValidation(
             description=sanitized_description,
@@ -220,6 +248,7 @@ async def create_report(
         metadata_json={
             "original_filename": photo.filename,
             "saved_path": stored.absolute_path,
+            "reported_title": sanitized_title or None,
         },
     )
     db.add_all([location, evidence])
@@ -244,6 +273,64 @@ async def create_report(
         status=incident.status,
         created_at=incident.created_at,
         ai_status="PENDING",
+    )
+
+
+@router.post(
+    "/reports/analyze-image",
+    response_model=ReportImageAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def analyze_report_image(
+    photo: UploadFile = File(...),
+    description: Annotated[str | None, Form()] = None,
+    category: Annotated[IncidentCategory, Form()] = IncidentCategory.INFRASTRUCTURE,
+) -> ReportImageAnalysisResponse:
+    settings = get_settings()
+    if photo.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type. Allowed: {sorted(ALLOWED_IMAGE_TYPES)}",
+        )
+
+    file_bytes = await photo.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Photo file is empty")
+
+    max_size_bytes = settings.max_image_size_mb * 1024 * 1024
+    if len(file_bytes) > max_size_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Photo exceeds {settings.max_image_size_mb}MB limit",
+        )
+
+    text = sanitize_description(description or "")
+    result = classify_incident(
+        description=text or "Sin descripcion",
+        user_category=category,
+        evidence_metadata={
+            "precheck_mode": True,
+            "file_name": photo.filename,
+        },
+        image_bytes=file_bytes,
+        image_mime_type=photo.content_type,
+    )
+
+    source = "heuristic"
+    if result.raw_response and isinstance(result.raw_response.get("source"), str):
+        source = str(result.raw_response["source"])
+
+    return ReportImageAnalysisResponse(
+        is_appropriate=result.is_appropriate,
+        is_incident=result.is_incident,
+        reason=result.reason,
+        suggested_title=result.suggested_title,
+        predicted_category=result.predicted_category,
+        priority_label=result.priority_label,
+        priority_score=result.priority_score,
+        confidence=result.confidence,
+        assigned_to=result.assigned_to,
+        source=source,
     )
 
 
@@ -315,6 +402,7 @@ def get_incident_detail(
             joinedload(Incident.location),
             joinedload(Incident.evidences),
             joinedload(Incident.ai_metrics),
+            joinedload(Incident.assignments).joinedload(IncidentAssignment.responsible),
             joinedload(Incident.notifications),
         )
         .filter(Incident.id == incident_id)

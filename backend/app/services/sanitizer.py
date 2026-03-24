@@ -11,3 +11,8 @@ def sanitize_description(raw: str) -> str:
     normalized = MULTISPACE_PATTERN.sub(" ", without_control).strip()
     return normalized[:280]
 
+
+def sanitize_title(raw: str) -> str:
+    without_control = CONTROL_CHAR_PATTERN.sub(" ", raw)
+    normalized = MULTISPACE_PATTERN.sub(" ", without_control).strip()
+    return normalized[:120]

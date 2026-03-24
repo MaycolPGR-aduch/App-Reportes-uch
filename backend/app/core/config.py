@@ -23,9 +23,10 @@ class Settings:
     cors_origins: list[str]
     local_storage_path: Path
     max_image_size_mb: int
-    openai_api_key: str | None
-    openai_model: str
-    openai_prompt_version: str
+    gemini_api_key: str | None
+    gemini_model: str
+    gemini_prompt_version: str
+    gemini_thinking_budget: int
     sendgrid_api_key: str | None
     sendgrid_from_email: str | None
     default_alert_email: str | None
@@ -71,9 +72,10 @@ def get_settings() -> Settings:
         cors_origins=cors_origins,
         local_storage_path=local_storage_path,
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        openai_prompt_version=os.getenv("OPENAI_PROMPT_VERSION", "mvp-v1"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        gemini_prompt_version=os.getenv("GEMINI_PROMPT_VERSION", "mvp-v1"),
+        gemini_thinking_budget=int(os.getenv("GEMINI_THINKING_BUDGET", "0")),
         sendgrid_api_key=os.getenv("SENDGRID_API_KEY"),
         sendgrid_from_email=os.getenv("SENDGRID_FROM_EMAIL"),
         default_alert_email=os.getenv("DEFAULT_ALERT_EMAIL"),

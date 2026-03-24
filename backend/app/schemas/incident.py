@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import (
+    AssignmentStatus,
     IncidentCategory,
     IncidentStatus,
     NotificationStatus,
@@ -43,6 +44,7 @@ class AIMetricOut(BaseModel):
     confidence: Decimal
     latency_ms: int
     reasoning_summary: str
+    raw_response: dict[str, Any] | None
     created_at: datetime
 
 
@@ -53,6 +55,20 @@ class NotificationOut(BaseModel):
     channel: str
     subject: str
     sent_at: datetime | None
+    created_at: datetime
+
+
+class AssignmentOut(BaseModel):
+    id: UUID
+    responsible_id: UUID
+    responsible_name: str
+    responsible_area: str
+    responsible_email: str
+    status: AssignmentStatus
+    notes: str | None
+    assigned_at: datetime
+    due_at: datetime | None
+    completed_at: datetime | None
     created_at: datetime
 
 
@@ -84,10 +100,10 @@ class IncidentDetail(BaseModel):
     location: LocationOut | None
     evidences: list[EvidenceOut]
     ai_metrics: list[AIMetricOut]
+    assignments: list[AssignmentOut]
     notifications: list[NotificationOut]
 
 
 class IncidentListResponse(BaseModel):
     total: int
     items: list[IncidentListItem]
-

@@ -11,8 +11,21 @@
    `psql "<ADMIN_DATABASE_URL>" -f sql/grant_permissions.sql`
 4. (Opcional) Cargar usuarios de prueba:
    `psql "$DATABASE_URL" -f sql/seed_test_users.sql`
+4.1 (Opcional, recomendado) Cargar responsables para asignación automática:
+   `psql "$DATABASE_URL" -f sql/seed_responsibles.sql`
 5. Levantar API:
    `uvicorn app.main:app --reload --port 8000`
+
+## Configuracion IA (Gemini)
+
+- Proveedor IA MVP: Gemini Developer API.
+- Modelo recomendado para este caso (clasificacion rapida de texto corto): `gemini-2.5-flash`.
+- Variables clave en `.env`:
+  - `GEMINI_API_KEY`
+  - `GEMINI_MODEL` (default `gemini-2.5-flash`)
+  - `GEMINI_PROMPT_VERSION`
+  - `GEMINI_THINKING_BUDGET` (default `0` para menor latencia/costo en clasificacion)
+- Si falta `GEMINI_API_KEY`, el sistema usa clasificacion heuristica local para no bloquear el flujo.
 
 ## Workers
 
@@ -20,6 +33,14 @@
   `python -m app.workers.ai_worker`
 - Notificaciones correo:
   `python -m app.workers.notification_worker`
+
+Si no ejecutas workers, los jobs quedan en `PENDING` y no aparecerán métricas IA en el dashboard.
+
+## Diagnóstico IA rápido
+
+Para validar pipeline IA (DB + jobs + métricas + configuración Gemini):
+
+`python check_ai_pipeline.py`
 
 ## Endpoints MVP
 
