@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.campus_zone import CampusZone
     from app.models.incident import Incident
 
 
@@ -18,6 +19,7 @@ class IncidentLocation(Base):
     __tablename__ = "incident_locations"
     __table_args__ = (
         Index("ix_incident_locations_lat_lon", "latitude", "longitude"),
+        Index("ix_incident_locations_zone_status", "resolved_zone_name", "location_status"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -33,9 +35,18 @@ class IncidentLocation(Base):
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     accuracy_m: Mapped[float | None] = mapped_column(Float)
     reference: Mapped[str | None] = mapped_column(String(255))
+    resolved_zone_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("campus_zones.id", ondelete="SET NULL"),
+    )
+    resolved_zone_name: Mapped[str | None] = mapped_column(String(120))
+    location_status: Mapped[str] = mapped_column(String(20), default="UNKNOWN", nullable=False)
+    location_confidence: Mapped[float | None] = mapped_column(Float)
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     incident: Mapped["Incident"] = relationship(back_populates="location")
-
+    resolved_zone: Mapped["CampusZone | None"] = relationship(
+        back_populates="incident_locations"
+    )

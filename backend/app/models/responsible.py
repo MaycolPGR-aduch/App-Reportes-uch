@@ -27,6 +27,7 @@ class Responsible(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     area_name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone_number: Mapped[str | None] = mapped_column(String(32))
     category: Mapped[IncidentCategory] = mapped_column(
         SAEnum(IncidentCategory, name="incident_category"), nullable=False
     )
@@ -40,4 +41,3 @@ class Responsible(Base, TimestampMixin):
     assignments: Mapped[list["IncidentAssignment"]] = relationship(
         back_populates="responsible"
     )
-

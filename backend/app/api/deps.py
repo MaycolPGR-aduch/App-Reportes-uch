@@ -46,6 +46,15 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def get_current_staff(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != UserRole.STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff role required",
+        )
+    return current_user
+
+
 def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
     db: Session = Depends(get_db),

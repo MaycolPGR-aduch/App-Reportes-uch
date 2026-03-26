@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE INDEX IF NOT EXISTS ix_incidents_created_status_category_priority
   ON incidents (created_at, status, category, priority);
 
+CREATE TABLE IF NOT EXISTS campus_zones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(120) NOT NULL UNIQUE,
+  code VARCHAR(40) UNIQUE,
+  priority INTEGER NOT NULL DEFAULT 100,
+  polygon_geojson JSONB NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_campus_zones_active_priority
+  ON campus_zones (is_active, priority);
+
 CREATE TABLE IF NOT EXISTS incident_locations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id UUID NOT NULL UNIQUE REFERENCES incidents(id) ON DELETE CASCADE,
@@ -70,11 +84,19 @@ CREATE TABLE IF NOT EXISTS incident_locations (
   longitude DOUBLE PRECISION NOT NULL CHECK (longitude >= -180 AND longitude <= 180),
   accuracy_m DOUBLE PRECISION CHECK (accuracy_m IS NULL OR accuracy_m >= 0),
   reference VARCHAR(255),
+  resolved_zone_id UUID REFERENCES campus_zones(id) ON DELETE SET NULL,
+  resolved_zone_name VARCHAR(120),
+  location_status VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN',
+  location_confidence DOUBLE PRECISION CHECK (
+    location_confidence IS NULL OR (location_confidence >= 0 AND location_confidence <= 1)
+  ),
   captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS ix_incident_locations_lat_lon
   ON incident_locations (latitude, longitude);
+CREATE INDEX IF NOT EXISTS ix_incident_locations_zone_status
+  ON incident_locations (resolved_zone_name, location_status);
 
 CREATE TABLE IF NOT EXISTS incident_evidences (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -93,6 +115,7 @@ CREATE TABLE IF NOT EXISTS responsibles (
   full_name VARCHAR(120) NOT NULL,
   area_name VARCHAR(120) NOT NULL,
   email VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(32),
   category incident_category NOT NULL,
   min_priority priority_level NOT NULL DEFAULT 'MEDIUM',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -163,4 +186,3 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS ix_jobs_type_status_run_after
   ON jobs (type, status, run_after);
-

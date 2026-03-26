@@ -101,6 +101,8 @@ export function ReportForm() {
 
       if (response.role === "ADMIN") {
         router.push("/dashboard");
+      } else if (response.role === "STAFF") {
+        router.push("/dashboard/staff");
       } else {
         router.push("/");
       }
@@ -356,7 +358,7 @@ export function ReportForm() {
             <label className="grid gap-1 text-sm">
               Codigo campus
               <input
-                className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
+                className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
                 value={campusId}
                 onChange={(e) => setCampusId(e.target.value)}
                 placeholder="u20260001"
@@ -368,7 +370,7 @@ export function ReportForm() {
                 <label className="grid gap-1 text-sm">
                   Nombre completo
                   <input
-                    className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
+                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
@@ -377,7 +379,7 @@ export function ReportForm() {
                 <label className="grid gap-1 text-sm">
                   Correo
                   <input
-                    className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
+                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     type="email"
@@ -389,7 +391,7 @@ export function ReportForm() {
             <label className="grid gap-1 text-sm">
               Contrasena
               <input
-                className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
+                className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 type="password"
@@ -400,7 +402,7 @@ export function ReportForm() {
             {authError ? <p className="text-sm text-red-600">{authError}</p> : null}
             <button
               disabled={authLoading}
-              className="rounded-xl bg-emerald-700 px-4 py-2.5 font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {authLoading
                 ? authTab === "LOGIN"

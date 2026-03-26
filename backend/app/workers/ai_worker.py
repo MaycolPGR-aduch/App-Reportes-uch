@@ -193,13 +193,15 @@ def run_worker() -> None:
                 if incident.priority != PriorityLevel.CRITICAL and result.is_incident:
                     incident.priority = result.priority_label
 
-                if result.is_appropriate and result.is_incident:
+                assigned_responsible: Responsible | None = None
+                if settings.auto_assign_enabled and result.is_appropriate and result.is_incident:
                     responsible = _resolve_responsible_for_assignment(
                         db=db,
                         incident=incident,
                         assigned_to_hint=result.assigned_to,
                     )
                     if responsible:
+                        assigned_responsible = responsible
                         assignment_note = (
                             f"Asignacion sugerida por IA ({settings.gemini_model}). "
                             f"Titulo sugerido: {result.suggested_title or 'N/A'}"
@@ -211,15 +213,17 @@ def run_worker() -> None:
                             note=assignment_note,
                         )
 
-                enqueue_job(
-                    db,
-                    incident_id=incident.id,
-                    job_type=JobType.SEND_NOTIFICATION,
-                    payload={
-                        "source": "ai_classification",
-                        "classified_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
+                if assigned_responsible is not None:
+                    enqueue_job(
+                        db,
+                        incident_id=incident.id,
+                        job_type=JobType.SEND_NOTIFICATION,
+                        payload={
+                            "source": "ai_assignment",
+                            "classified_at": datetime.now(timezone.utc).isoformat(),
+                            "recipient_overrides": [assigned_responsible.email],
+                        },
+                    )
                 complete_job(db, job)
                 db.commit()
             except Exception as exc:

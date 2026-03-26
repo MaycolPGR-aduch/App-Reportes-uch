@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserRole, login } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
 
@@ -10,6 +11,7 @@ const ROLE_KEY = "campus_user_role";
 const CAMPUS_ID_KEY = "campus_user_id";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [campusId, setCampusId] = useState("");
@@ -22,7 +24,10 @@ export default function DashboardPage() {
     const storedRole = window.localStorage.getItem(ROLE_KEY) as UserRole | null;
     if (storedToken) setToken(storedToken);
     if (storedRole) setRole(storedRole);
-  }, []);
+    if (storedToken && storedRole === "STAFF") {
+      router.replace("/dashboard/staff");
+    }
+  }, [router]);
 
   const handleLogout = () => {
     window.localStorage.removeItem(TOKEN_KEY);
@@ -44,6 +49,9 @@ export default function DashboardPage() {
       setToken(response.access_token);
       setRole(response.role);
       setPassword("");
+      if (response.role === "STAFF") {
+        router.push("/dashboard/staff");
+      }
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : "No se pudo iniciar sesion");
     } finally {
@@ -53,18 +61,18 @@ export default function DashboardPage() {
 
   if (!token) {
     return (
-      <main className="mx-auto flex w-full max-w-xl flex-1 px-4 py-10 sm:px-6">
+      <main className="mx-auto flex w-full max-w-lg flex-1 px-4 py-10 sm:px-6">
         <form
-          className="grid w-full gap-4 rounded-2xl border border-[var(--line)] bg-white p-6 shadow-sm"
+          className="grid w-full gap-3 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm"
           onSubmit={handleLogin}
         >
-          <h1 className="font-heading text-2xl font-semibold text-emerald-900">
+          <h1 className="font-heading text-xl font-semibold text-emerald-900">
             Login para dashboard
           </h1>
           <label className="grid gap-1 text-sm">
             Codigo campus
             <input
-              className="rounded-xl border border-[var(--line)] px-3 py-2"
+              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
               value={campusId}
               onChange={(e) => setCampusId(e.target.value)}
               required
@@ -73,7 +81,7 @@ export default function DashboardPage() {
           <label className="grid gap-1 text-sm">
             Contrasena
             <input
-              className="rounded-xl border border-[var(--line)] px-3 py-2"
+              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -84,7 +92,7 @@ export default function DashboardPage() {
           {authError ? <p className="text-sm text-red-600">{authError}</p> : null}
           <button
             disabled={authLoading}
-            className="rounded-xl bg-emerald-700 px-4 py-2.5 font-semibold text-white hover:bg-emerald-800 disabled:opacity-70"
+            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-70"
           >
             {authLoading ? "Ingresando..." : "Entrar"}
           </button>
@@ -120,4 +128,3 @@ export default function DashboardPage() {
     </main>
   );
 }
-

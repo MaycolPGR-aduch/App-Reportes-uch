@@ -21,6 +21,10 @@ class LocationOut(BaseModel):
     longitude: float
     accuracy_m: float | None
     reference: str | None
+    resolved_zone_id: UUID | None
+    resolved_zone_name: str | None
+    location_status: str
+    location_confidence: float | None
     captured_at: datetime
 
 
@@ -64,6 +68,7 @@ class AssignmentOut(BaseModel):
     responsible_name: str
     responsible_area: str
     responsible_email: str
+    responsible_phone: str | None
     status: AssignmentStatus
     notes: str | None
     assigned_at: datetime
@@ -82,6 +87,8 @@ class IncidentListItem(BaseModel):
     description: str
     created_at: datetime
     reporter_campus_id: str
+    location_zone_name: str | None
+    location_status: str | None
 
 
 class IncidentDetail(BaseModel):

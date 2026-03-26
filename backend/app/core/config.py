@@ -27,6 +27,10 @@ class Settings:
     gemini_model: str
     gemini_prompt_version: str
     gemini_thinking_budget: int
+    auto_assign_enabled: bool
+    brevo_api_key: str | None
+    brevo_from_email: str | None
+    brevo_from_name: str
     sendgrid_api_key: str | None
     sendgrid_from_email: str | None
     default_alert_email: str | None
@@ -76,6 +80,10 @@ def get_settings() -> Settings:
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         gemini_prompt_version=os.getenv("GEMINI_PROMPT_VERSION", "mvp-v1"),
         gemini_thinking_budget=int(os.getenv("GEMINI_THINKING_BUDGET", "0")),
+        auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
+        brevo_api_key=os.getenv("BREVO_API_KEY"),
+        brevo_from_email=os.getenv("BREVO_FROM_EMAIL"),
+        brevo_from_name=os.getenv("BREVO_FROM_NAME", "Campus Alertas"),
         sendgrid_api_key=os.getenv("SENDGRID_API_KEY"),
         sendgrid_from_email=os.getenv("SENDGRID_FROM_EMAIL"),
         default_alert_email=os.getenv("DEFAULT_ALERT_EMAIL"),

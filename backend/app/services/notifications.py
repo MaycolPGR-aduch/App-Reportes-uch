@@ -31,7 +31,24 @@ class EmailSendResult:
     error_message: str | None
 
 
-def resolve_recipients(db: Session, incident: Incident) -> list[str]:
+def _normalize_recipients(raw_recipients: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw in raw_recipients:
+        email = raw.strip().lower()
+        if email:
+            normalized.append(email)
+    return sorted(set(normalized))
+
+
+def resolve_recipients(
+    db: Session,
+    incident: Incident,
+    *,
+    recipient_overrides: list[str] | None = None,
+) -> list[str]:
+    if recipient_overrides:
+        return _normalize_recipients(recipient_overrides)
+
     rows = (
         db.query(Responsible)
         .filter(
@@ -50,18 +67,30 @@ def resolve_recipients(db: Session, incident: Incident) -> list[str]:
     settings = get_settings()
     if not recipients and settings.default_alert_email:
         recipients.append(settings.default_alert_email)
-    return sorted(set(recipients))
+    return _normalize_recipients(recipients)
 
 
 def _compose_html(incident: Incident) -> str:
     settings = get_settings()
     detail_url = f"{settings.dashboard_base_url}/{incident.id}"
+    location_html = "<p><strong>Ubicacion:</strong> Sin coordenadas</p>"
+    if incident.location:
+        zone_name = incident.location.resolved_zone_name or "Zona no definida"
+        location_html = (
+            f"<p><strong>Zona detectada:</strong> {zone_name}</p>"
+            f"<p><strong>Estado ubicacion:</strong> {incident.location.location_status}</p>"
+            "<p><strong>GPS:</strong> "
+            f"{incident.location.latitude:.6f}, {incident.location.longitude:.6f}"
+            "</p>"
+        )
+
     return (
         "<h2>Nueva incidencia en campus</h2>"
         f"<p><strong>ID:</strong> {incident.id}</p>"
         f"<p><strong>Categoria:</strong> {incident.category.value}</p>"
         f"<p><strong>Prioridad:</strong> {incident.priority.value}</p>"
         f"<p><strong>Estado:</strong> {incident.status.value}</p>"
+        f"{location_html}"
         f"<p><strong>Descripcion:</strong> {incident.description}</p>"
         f"<p><strong>Reportante:</strong> {incident.reporter.campus_id}</p>"
         f"<p><a href='{detail_url}'>Abrir en dashboard</a></p>"
@@ -74,32 +103,39 @@ def send_email_notification(
     recipient: str,
 ) -> EmailSendResult:
     settings = get_settings()
-    if not settings.sendgrid_api_key or not settings.sendgrid_from_email:
+    if not settings.brevo_api_key or not settings.brevo_from_email:
         return EmailSendResult(
             status=NotificationStatus.FAILED,
             provider_message_id=None,
-            error_message="SENDGRID_API_KEY or SENDGRID_FROM_EMAIL not configured",
+            error_message="BREVO_API_KEY or BREVO_FROM_EMAIL not configured",
         )
 
     payload = {
-        "personalizations": [{"to": [{"email": recipient}]}],
-        "from": {"email": settings.sendgrid_from_email},
+        "sender": {"email": settings.brevo_from_email, "name": settings.brevo_from_name},
+        "to": [{"email": recipient}],
         "subject": f"[{incident.priority.value}] Incidencia {incident.category.value} - {incident.id}",
-        "content": [{"type": "text/html", "value": _compose_html(incident)}],
+        "htmlContent": _compose_html(incident),
     }
     headers = {
-        "Authorization": f"Bearer {settings.sendgrid_api_key}",
+        "api-key": settings.brevo_api_key,
+        "Accept": "application/json",
         "Content-Type": "application/json",
     }
     try:
         response = httpx.post(
-            "https://api.sendgrid.com/v3/mail/send",
+            "https://api.brevo.com/v3/smtp/email",
             headers=headers,
             json=payload,
             timeout=10.0,
         )
-        if 200 <= response.status_code < 300:
-            message_id = response.headers.get("X-Message-Id")
+        if response.status_code in {200, 201, 202}:
+            message_id = None
+            try:
+                body = response.json()
+                if isinstance(body, dict) and isinstance(body.get("messageId"), str):
+                    message_id = body["messageId"]
+            except Exception:
+                message_id = None
             return EmailSendResult(
                 status=NotificationStatus.SENT,
                 provider_message_id=message_id,
@@ -108,7 +144,7 @@ def send_email_notification(
         return EmailSendResult(
             status=NotificationStatus.FAILED,
             provider_message_id=None,
-            error_message=f"SendGrid error {response.status_code}: {response.text[:250]}",
+            error_message=f"Brevo error {response.status_code}: {response.text[:250]}",
         )
     except Exception as exc:
         return EmailSendResult(
@@ -140,4 +176,3 @@ def register_notification(
     )
     db.add(notification)
     return notification
-

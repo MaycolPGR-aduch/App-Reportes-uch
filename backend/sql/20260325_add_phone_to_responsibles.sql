@@ -1,0 +1,3 @@
+ALTER TABLE IF EXISTS responsibles
+ADD COLUMN IF NOT EXISTS phone_number VARCHAR(32);
+

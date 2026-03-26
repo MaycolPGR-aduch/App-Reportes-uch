@@ -41,6 +41,7 @@ from app.schemas.report import ReportCreateResponse, ReportValidation
 from app.schemas.report import ReportImageAnalysisResponse
 from app.services.ai import classify_incident
 from app.services.jobs import enqueue_job
+from app.services.location_resolver import resolve_campus_zone
 from app.services.sanitizer import sanitize_description, sanitize_title
 from app.services.storage import LocalStorageProvider
 
@@ -78,6 +79,10 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
             longitude=incident.location.longitude,
             accuracy_m=incident.location.accuracy_m,
             reference=incident.location.reference,
+            resolved_zone_id=incident.location.resolved_zone_id,
+            resolved_zone_name=incident.location.resolved_zone_name,
+            location_status=incident.location.location_status,
+            location_confidence=incident.location.location_confidence,
             captured_at=incident.location.captured_at,
         )
         if incident.location
@@ -119,6 +124,7 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
             responsible_name=a.responsible.full_name,
             responsible_area=a.responsible.area_name,
             responsible_email=a.responsible.email,
+            responsible_phone=a.responsible.phone_number,
             status=a.status,
             notes=a.notes,
             assigned_at=a.assigned_at,
@@ -238,7 +244,20 @@ async def create_report(
         longitude=longitude,
         accuracy_m=accuracy_m,
         reference=(location_reference or "").strip()[:255] or None,
+        location_status="UNKNOWN",
     )
+
+    resolved_location = resolve_campus_zone(
+        db,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy_m=accuracy_m,
+    )
+    location.resolved_zone_id = resolved_location.zone_id
+    location.resolved_zone_name = resolved_location.zone_name
+    location.location_status = resolved_location.location_status
+    location.location_confidence = resolved_location.location_confidence
+
     evidence = IncidentEvidence(
         incident_id=incident.id,
         storage_path=stored.relative_path,
@@ -257,12 +276,6 @@ async def create_report(
         db,
         incident_id=incident.id,
         job_type=JobType.CLASSIFY_INCIDENT,
-        payload={"source": "report_created"},
-    )
-    enqueue_job(
-        db,
-        incident_id=incident.id,
-        job_type=JobType.SEND_NOTIFICATION,
         payload={"source": "report_created"},
     )
 
@@ -368,6 +381,7 @@ def list_incidents(
     total = base_query.with_entities(func.count(Incident.id)).scalar() or 0
     incidents = (
         base_query.options(joinedload(Incident.reporter))
+        .options(joinedload(Incident.location))
         .order_by(Incident.created_at.desc())
         .offset(safe_offset)
         .limit(safe_limit)
@@ -383,6 +397,8 @@ def list_incidents(
             description=inc.description,
             created_at=inc.created_at,
             reporter_campus_id=inc.reporter.campus_id,
+            location_zone_name=inc.location.resolved_zone_name if inc.location else None,
+            location_status=inc.location.location_status if inc.location else None,
         )
         for inc in incidents
     ]

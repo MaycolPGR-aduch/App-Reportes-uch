@@ -33,7 +33,7 @@ def run_worker() -> None:
 
             incident = (
                 db.query(Incident)
-                .options(joinedload(Incident.reporter))
+                .options(joinedload(Incident.reporter), joinedload(Incident.location))
                 .filter(Incident.id == job.incident_id)
                 .first()
             )
@@ -47,7 +47,21 @@ def run_worker() -> None:
                 db.commit()
                 continue
 
-            recipients = resolve_recipients(db, incident)
+            recipient_overrides = None
+            if isinstance(job.payload, dict):
+                raw_overrides = job.payload.get("recipient_overrides")
+                if isinstance(raw_overrides, list):
+                    recipient_overrides = [
+                        str(item)
+                        for item in raw_overrides
+                        if isinstance(item, str) and item.strip()
+                    ]
+
+            recipients = resolve_recipients(
+                db,
+                incident,
+                recipient_overrides=recipient_overrides,
+            )
             if not recipients:
                 fail_job(
                     db,

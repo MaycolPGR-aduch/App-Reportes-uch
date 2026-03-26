@@ -18,6 +18,8 @@ export type IncidentListItem = {
   description: string;
   created_at: string;
   reporter_campus_id: string;
+  location_zone_name: string | null;
+  location_status: string | null;
 };
 
 export type IncidentListResponse = {
@@ -41,6 +43,10 @@ export type IncidentDetail = {
     longitude: number;
     accuracy_m: number | null;
     reference: string | null;
+    resolved_zone_id: string | null;
+    resolved_zone_name: string | null;
+    location_status: string;
+    location_confidence: number | null;
     captured_at: string;
   } | null;
   evidences: Array<{
@@ -71,6 +77,7 @@ export type IncidentDetail = {
     responsible_name: string;
     responsible_area: string;
     responsible_email: string;
+    responsible_phone: string | null;
     status: AssignmentStatus;
     notes: string | null;
     assigned_at: string;
@@ -145,6 +152,114 @@ export type SystemStatusResponse = {
     latest_source: string | null;
   };
   notes: string[];
+};
+
+export type StaffMember = {
+  id: string;
+  full_name: string;
+  area_name: string;
+  email: string;
+  phone_number: string | null;
+  category: IncidentCategory;
+  min_priority: PriorityLevel;
+  is_active: boolean;
+  pending_assignments: number;
+  completed_assignments: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StaffListResponse = {
+  total: number;
+  items: StaffMember[];
+};
+
+export type StaffAssignmentItem = {
+  assignment_id: string;
+  incident_id: string;
+  incident_category: IncidentCategory;
+  incident_priority: PriorityLevel;
+  incident_status: IncidentStatus;
+  incident_zone_name: string | null;
+  assignment_status: AssignmentStatus;
+  incident_description: string;
+  assigned_at: string;
+  due_at: string | null;
+  completed_at: string | null;
+};
+
+export type StaffAssignmentListResponse = {
+  total: number;
+  items: StaffAssignmentItem[];
+};
+
+export type StaffOwnAssignmentItem = {
+  assignment_id: string;
+  responsible_id: string;
+  responsible_area_name: string;
+  incident_id: string;
+  incident_category: IncidentCategory;
+  incident_priority: PriorityLevel;
+  incident_status: IncidentStatus;
+  incident_zone_name: string | null;
+  assignment_status: AssignmentStatus;
+  incident_description: string;
+  assigned_at: string;
+  due_at: string | null;
+  completed_at: string | null;
+};
+
+export type StaffOwnAssignmentListResponse = {
+  total: number;
+  items: StaffOwnAssignmentItem[];
+};
+
+export type AssignmentActionResponse = {
+  assignment_id: string;
+  incident_id: string;
+  responsible_id: string;
+  assignment_status: AssignmentStatus;
+  incident_status: IncidentStatus;
+  message: string;
+};
+
+export type IncidentStatusUpdateResponse = {
+  incident_id: string;
+  incident_status: IncidentStatus;
+  message: string;
+};
+
+export type StaffCompleteAssignmentResponse = {
+  assignment_id: string;
+  incident_id: string;
+  assignment_status: AssignmentStatus;
+  incident_status: IncidentStatus;
+  message: string;
+};
+
+export type CampusZone = {
+  id: string;
+  name: string;
+  code: string | null;
+  priority: number;
+  polygon_geojson: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CampusZoneListResponse = {
+  total: number;
+  items: CampusZone[];
+};
+
+export type IncidentLocationResolveResponse = {
+  incident_id: string;
+  zone_id: string | null;
+  zone_name: string | null;
+  location_status: string;
+  location_confidence: number | null;
+  message: string;
 };
 
 export type ReportImageAnalysis = {
@@ -390,6 +505,259 @@ export async function banAdminUser(token: string, userId: string): Promise<Admin
 
 export async function unbanAdminUser(token: string, userId: string): Promise<AdminUser> {
   return request<AdminUser>(`/admin/users/${userId}/unban`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function listStaff(
+  token: string,
+  params?: {
+    search?: string;
+    category?: IncidentCategory;
+    active?: boolean;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<StaffListResponse> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.category) query.set("category", params.category);
+  if (typeof params?.active === "boolean") query.set("active", String(params.active));
+  query.set("limit", String(params?.limit ?? 100));
+  query.set("offset", String(params?.offset ?? 0));
+
+  return request<StaffListResponse>(`/admin/staff?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function createStaff(
+  token: string,
+  payload: {
+    full_name: string;
+    area_name: string;
+    email: string;
+    phone_number?: string | null;
+    category: IncidentCategory;
+    min_priority: PriorityLevel;
+    is_active: boolean;
+  },
+): Promise<StaffMember> {
+  return request<StaffMember>("/admin/staff", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateStaff(
+  token: string,
+  staffId: string,
+  payload: {
+    full_name?: string;
+    area_name?: string;
+    email?: string;
+    phone_number?: string | null;
+    category?: IncidentCategory;
+    min_priority?: PriorityLevel;
+    is_active?: boolean;
+  },
+): Promise<StaffMember> {
+  return request<StaffMember>(`/admin/staff/${staffId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listStaffAssignments(
+  token: string,
+  staffId: string,
+  params?: {
+    status_filter?: AssignmentStatus;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<StaffAssignmentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status_filter) query.set("status_filter", params.status_filter);
+  query.set("limit", String(params?.limit ?? 100));
+  query.set("offset", String(params?.offset ?? 0));
+  return request<StaffAssignmentListResponse>(
+    `/admin/staff/${staffId}/assignments?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+}
+
+export async function listMyStaffAssignments(
+  token: string,
+  params?: {
+    status_filter?: AssignmentStatus;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<StaffOwnAssignmentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status_filter) query.set("status_filter", params.status_filter);
+  query.set("limit", String(params?.limit ?? 100));
+  query.set("offset", String(params?.offset ?? 0));
+
+  return request<StaffOwnAssignmentListResponse>(`/staff/my-assignments?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function completeMyStaffAssignment(
+  token: string,
+  assignmentId: string,
+): Promise<StaffCompleteAssignmentResponse> {
+  return request<StaffCompleteAssignmentResponse>(`/staff/assignments/${assignmentId}/complete`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function assignIncidentToStaff(
+  token: string,
+  incidentId: string,
+  payload: {
+    responsible_id: string;
+    notes?: string;
+    notify?: boolean;
+  },
+): Promise<AssignmentActionResponse> {
+  return request<AssignmentActionResponse>(`/admin/incidents/${incidentId}/assign`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAssignmentStatus(
+  token: string,
+  assignmentId: string,
+  payload: {
+    status: AssignmentStatus;
+    notes?: string;
+  },
+): Promise<AssignmentActionResponse> {
+  return request<AssignmentActionResponse>(`/admin/assignments/${assignmentId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateIncidentStatusAdmin(
+  token: string,
+  incidentId: string,
+  payload: {
+    status: IncidentStatus;
+  },
+): Promise<IncidentStatusUpdateResponse> {
+  return request<IncidentStatusUpdateResponse>(`/admin/incidents/${incidentId}/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listCampusZones(
+  token: string,
+  params?: {
+    search?: string;
+    active?: boolean;
+    limit?: number;
+    offset?: number;
+  },
+): Promise<CampusZoneListResponse> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (typeof params?.active === "boolean") query.set("active", String(params.active));
+  query.set("limit", String(params?.limit ?? 200));
+  query.set("offset", String(params?.offset ?? 0));
+
+  return request<CampusZoneListResponse>(`/admin/campus-zones?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function createCampusZone(
+  token: string,
+  payload: {
+    name: string;
+    code?: string | null;
+    priority: number;
+    polygon_geojson: Record<string, unknown>;
+    is_active: boolean;
+  },
+): Promise<CampusZone> {
+  return request<CampusZone>("/admin/campus-zones", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCampusZone(
+  token: string,
+  zoneId: string,
+  payload: {
+    name?: string;
+    code?: string | null;
+    priority?: number;
+    polygon_geojson?: Record<string, unknown>;
+    is_active?: boolean;
+  },
+): Promise<CampusZone> {
+  return request<CampusZone>(`/admin/campus-zones/${zoneId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resolveIncidentLocationZone(
+  token: string,
+  incidentId: string,
+): Promise<IncidentLocationResolveResponse> {
+  return request<IncidentLocationResolveResponse>(`/admin/incidents/${incidentId}/resolve-location`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

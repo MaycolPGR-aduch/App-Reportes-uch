@@ -231,6 +231,9 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
                     <span className="text-xs text-slate-500">
                       Reportante: {item.reporter_campus_id}
                     </span>
+                    <span className="text-xs text-emerald-700">
+                      Zona: {item.location_zone_name ?? "No definida"} ({item.location_status ?? "N/A"})
+                    </span>
                   </button>
                 </li>
               );
@@ -260,6 +263,12 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
                   label="GPS"
                   value={`${selectedDetail.location.latitude.toFixed(6)}, ${selectedDetail.location.longitude.toFixed(6)}`}
                   mono
+                />
+              ) : null}
+              {selectedDetail.location ? (
+                <DetailRow
+                  label="Zona detectada"
+                  value={`${selectedDetail.location.resolved_zone_name ?? "No definida"} (${selectedDetail.location.location_status})`}
                 />
               ) : null}
               <DetailRow label="Evidencias" value={String(selectedDetail.evidences.length)} />
