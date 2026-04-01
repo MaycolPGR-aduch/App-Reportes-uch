@@ -72,6 +72,10 @@ class AdminCreateUserRequest(BaseModel):
     email: str = Field(min_length=6, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     role: UserRole = UserRole.STUDENT
+    staff_area_name: str | None = Field(default=None, min_length=3, max_length=120)
+    staff_phone_number: str | None = Field(default=None, min_length=7, max_length=32)
+    staff_category: IncidentCategory | None = None
+    staff_min_priority: PriorityLevel | None = None
 
 
 class AdminUpdateUserRequest(BaseModel):
@@ -80,6 +84,10 @@ class AdminUpdateUserRequest(BaseModel):
     role: UserRole | None = None
     status: UserStatus | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
+    staff_area_name: str | None = Field(default=None, min_length=3, max_length=120)
+    staff_phone_number: str | None = Field(default=None, min_length=7, max_length=32)
+    staff_category: IncidentCategory | None = None
+    staff_min_priority: PriorityLevel | None = None
 
 
 class StaffOut(BaseModel):

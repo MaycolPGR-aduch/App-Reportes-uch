@@ -19,7 +19,6 @@ import {
   banAdminUser,
   createCampusZone,
   createAdminUser,
-  createStaff,
   getSystemStatus,
   listAdminUsers,
   listCampusZones,
@@ -32,7 +31,6 @@ import {
   updateAdminUser,
   updateAssignmentStatus,
   updateIncidentStatusAdmin,
-  updateStaff,
 } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
 
@@ -87,12 +85,20 @@ export default function AdminDashboardPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("STUDENT");
+  const [newStaffAreaName, setNewStaffAreaName] = useState("");
+  const [newStaffPhoneNumber, setNewStaffPhoneNumber] = useState("");
+  const [newStaffCategory, setNewStaffCategory] = useState<IncidentCategory>("INFRASTRUCTURE");
+  const [newStaffMinPriority, setNewStaffMinPriority] = useState<PriorityLevel>("MEDIUM");
 
   const [editFullName, setEditFullName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState<UserRole>("STUDENT");
   const [editStatus, setEditStatus] = useState<UserStatus>("ACTIVE");
   const [editPassword, setEditPassword] = useState("");
+  const [editStaffAreaName, setEditStaffAreaName] = useState("");
+  const [editStaffPhoneNumber, setEditStaffPhoneNumber] = useState("");
+  const [editStaffCategory, setEditStaffCategory] = useState<IncidentCategory>("INFRASTRUCTURE");
+  const [editStaffMinPriority, setEditStaffMinPriority] = useState<PriorityLevel>("MEDIUM");
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [staffTotal, setStaffTotal] = useState(0);
@@ -105,22 +111,6 @@ export default function AdminDashboardPage() {
   const [staffAssignments, setStaffAssignments] = useState<StaffAssignmentItem[]>([]);
   const [staffAssignmentsLoading, setStaffAssignmentsLoading] = useState(false);
   const [staffActionMessage, setStaffActionMessage] = useState<string | null>(null);
-
-  const [newStaffName, setNewStaffName] = useState("");
-  const [newStaffArea, setNewStaffArea] = useState("");
-  const [newStaffEmail, setNewStaffEmail] = useState("");
-  const [newStaffPhone, setNewStaffPhone] = useState("");
-  const [newStaffCategory, setNewStaffCategory] = useState<IncidentCategory>("INFRASTRUCTURE");
-  const [newStaffPriority, setNewStaffPriority] = useState<PriorityLevel>("MEDIUM");
-  const [newStaffActive, setNewStaffActive] = useState(true);
-
-  const [editStaffName, setEditStaffName] = useState("");
-  const [editStaffArea, setEditStaffArea] = useState("");
-  const [editStaffEmail, setEditStaffEmail] = useState("");
-  const [editStaffPhone, setEditStaffPhone] = useState("");
-  const [editStaffCategory, setEditStaffCategory] = useState<IncidentCategory>("INFRASTRUCTURE");
-  const [editStaffPriority, setEditStaffPriority] = useState<PriorityLevel>("MEDIUM");
-  const [editStaffActive, setEditStaffActive] = useState(true);
 
   const [incidentPool, setIncidentPool] = useState<IncidentListItem[]>([]);
   const [incidentPoolLoading, setIncidentPoolLoading] = useState(false);
@@ -325,6 +315,16 @@ export default function AdminDashboardPage() {
     () => incidentPool.find((item) => item.id === assignIncidentId) ?? null,
     [assignIncidentId, incidentPool],
   );
+  const staffProfileByEmail = useMemo(() => {
+    const map = new Map<string, StaffMember>();
+    for (const item of staff) {
+      const key = item.email.trim().toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, item);
+      }
+    }
+    return map;
+  }, [staff]);
 
   useEffect(() => {
     if (selectedIncident) {
@@ -362,19 +362,37 @@ export default function AdminDashboardPage() {
     setEditRole(user.role);
     setEditStatus(user.status);
     setEditPassword("");
+
+    const linkedStaff = staffProfileByEmail.get(user.email.trim().toLowerCase()) ?? null;
+    setEditStaffAreaName(linkedStaff?.area_name ?? "");
+    setEditStaffPhoneNumber(linkedStaff?.phone_number ?? "");
+    setEditStaffCategory(linkedStaff?.category ?? "INFRASTRUCTURE");
+    setEditStaffMinPriority(linkedStaff?.min_priority ?? "MEDIUM");
   };
 
   const saveUserEdit = async () => {
     if (!token || !selectedUser) return;
+    setUsersError(null);
     try {
-      await updateAdminUser(token, selectedUser.id, {
+      const payload = {
         full_name: editFullName.trim(),
         email: editEmail.trim(),
         role: editRole,
         status: editStatus,
         password: editPassword.trim() || undefined,
+        ...(editRole === "STAFF"
+          ? {
+              staff_area_name: editStaffAreaName.trim() || undefined,
+              staff_phone_number: editStaffPhoneNumber.trim() || null,
+              staff_category: editStaffCategory,
+              staff_min_priority: editStaffMinPriority,
+            }
+          : {}),
+      };
+      await updateAdminUser(token, selectedUser.id, {
+        ...payload,
       });
-      await fetchUsers(search);
+      await Promise.all([fetchUsers(search), fetchStaff()]);
     } catch (e) {
       setUsersError(e instanceof Error ? e.message : "No se pudo actualizar usuario");
     }
@@ -394,84 +412,45 @@ export default function AdminDashboardPage() {
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token) return;
+    setUsersError(null);
     try {
-      await createAdminUser(token, {
+      const payload = {
         campus_id: newCampusId.trim(),
         full_name: newFullName.trim(),
         email: newEmail.trim(),
         password: newPassword,
         role: newRole,
+        ...(newRole === "STAFF"
+          ? {
+              staff_area_name: newStaffAreaName.trim() || undefined,
+              staff_phone_number: newStaffPhoneNumber.trim() || null,
+              staff_category: newStaffCategory,
+              staff_min_priority: newStaffMinPriority,
+            }
+          : {}),
+      };
+      await createAdminUser(token, {
+        ...payload,
       });
       setNewCampusId("");
       setNewFullName("");
       setNewEmail("");
       setNewPassword("");
       setNewRole("STUDENT");
-      await fetchUsers(search);
+      setNewStaffAreaName("");
+      setNewStaffPhoneNumber("");
+      setNewStaffCategory("INFRASTRUCTURE");
+      setNewStaffMinPriority("MEDIUM");
+      await Promise.all([fetchUsers(search), fetchStaff()]);
     } catch (e) {
       setUsersError(e instanceof Error ? e.message : "No se pudo crear usuario");
     }
   };
 
-  const selectStaffForEdit = (staffMember: StaffMember) => {
+  const selectStaffForAssignment = (staffMember: StaffMember) => {
     setSelectedStaff(staffMember);
     setAssignStaffId(staffMember.id);
-    setEditStaffName(staffMember.full_name);
-    setEditStaffArea(staffMember.area_name);
-    setEditStaffEmail(staffMember.email);
-    setEditStaffPhone(staffMember.phone_number ?? "");
-    setEditStaffCategory(staffMember.category);
-    setEditStaffPriority(staffMember.min_priority);
-    setEditStaffActive(staffMember.is_active);
     setStaffActionMessage(null);
-  };
-
-  const createStaffHandler = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!token) return;
-    setStaffError(null);
-    try {
-      await createStaff(token, {
-        full_name: newStaffName.trim(),
-        area_name: newStaffArea.trim(),
-        email: newStaffEmail.trim(),
-        phone_number: newStaffPhone.trim() || null,
-        category: newStaffCategory,
-        min_priority: newStaffPriority,
-        is_active: newStaffActive,
-      });
-      setNewStaffName("");
-      setNewStaffArea("");
-      setNewStaffEmail("");
-      setNewStaffPhone("");
-      setNewStaffCategory("INFRASTRUCTURE");
-      setNewStaffPriority("MEDIUM");
-      setNewStaffActive(true);
-      setStaffActionMessage("Staff creado correctamente.");
-      await fetchStaff();
-    } catch (e) {
-      setStaffError(e instanceof Error ? e.message : "No se pudo crear staff");
-    }
-  };
-
-  const saveStaffEditHandler = async () => {
-    if (!token || !selectedStaff) return;
-    setStaffError(null);
-    try {
-      await updateStaff(token, selectedStaff.id, {
-        full_name: editStaffName.trim(),
-        area_name: editStaffArea.trim(),
-        email: editStaffEmail.trim(),
-        phone_number: editStaffPhone.trim() || null,
-        category: editStaffCategory,
-        min_priority: editStaffPriority,
-        is_active: editStaffActive,
-      });
-      setStaffActionMessage("Staff actualizado correctamente.");
-      await fetchStaff();
-    } catch (e) {
-      setStaffError(e instanceof Error ? e.message : "No se pudo actualizar staff");
-    }
   };
 
   const assignIncidentHandler = async () => {
@@ -605,41 +584,59 @@ export default function AdminDashboardPage() {
 
   if (!token || role !== "ADMIN") {
     return (
-      <main className="mx-auto flex w-full max-w-lg flex-1 px-4 py-10 sm:px-6">
-        <form
-          className="grid w-full gap-3 rounded-2xl border border-[var(--line)] bg-white p-5"
-          onSubmit={handleLogin}
-        >
-          <h1 className="text-xl font-semibold text-emerald-900">Login Dashboard Admin</h1>
-          <input
-            className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
-            placeholder="Codigo campus"
-            value={campusId}
-            onChange={(e) => setCampusId(e.target.value)}
-            required
-          />
-          <input
-            className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
-            type="password"
-            placeholder="Contrasena"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {authError ? <p className="text-sm text-red-600">{authError}</p> : null}
-          <button
-            disabled={authLoading}
-            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white"
-          >
-            {authLoading ? "Ingresando..." : "Entrar"}
-          </button>
-        </form>
+      <main className="admin-login-stage mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-4 py-8 sm:px-6">
+        <div className="admin-login-frame">
+          <div className="admin-login-border" />
+          <form className="admin-login-card" onSubmit={handleLogin}>
+            <div className="space-y-1">
+              <p className="admin-login-kicker">Panel administrativo</p>
+              <h1 className="text-2xl font-semibold leading-tight text-emerald-950">Login para dashboard</h1>
+              <p className="text-xs text-slate-600">Acceso exclusivo para usuarios ADMIN.</p>
+            </div>
+
+            <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+              Codigo campus
+              <input
+                className="admin-login-input"
+                placeholder="Ejemplo: uadmin01"
+                value={campusId}
+                onChange={(e) => setCampusId(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+              Contrasena
+              <input
+                className="admin-login-input"
+                type="password"
+                placeholder="Ingresa tu contrasena"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </label>
+
+            {authError ? (
+              <p className="rounded-lg border border-red-200 bg-red-50/90 px-3 py-2 text-xs text-red-700">
+                {authError}
+              </p>
+            ) : null}
+
+            <button
+              disabled={authLoading}
+              className="admin-login-submit"
+            >
+              {authLoading ? "Ingresando..." : "Entrar"}
+            </button>
+          </form>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6">
+    <main className="admin-dashboard-pro mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold text-emerald-950">Dashboard Admin</h1>
         <div className="flex gap-2">
@@ -701,7 +698,7 @@ export default function AdminDashboardPage() {
       {tab === "INCIDENTS" ? <IncidentsWorkspace token={token} /> : null}
 
       {tab === "SYSTEM" ? (
-        <section className="rounded-2xl border border-[var(--line)] bg-white p-4">
+        <section className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Estado del sistema</h2>
             <button
@@ -766,232 +763,103 @@ export default function AdminDashboardPage() {
 
       {tab === "STAFF" ? (
         <section className="grid gap-4">
-          <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-4">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">Staff operativo ({staffTotal})</h2>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
-                    placeholder="Buscar staff..."
-                    value={staffSearch}
-                    onChange={(e) => setStaffSearch(e.target.value)}
-                  />
-                  <select
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
-                    value={staffCategoryFilter}
-                    onChange={(e) => setStaffCategoryFilter(e.target.value as IncidentCategory | "")}
-                  >
-                    <option value="">Todas categorías</option>
-                    <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
-                    <option value="SECURITY">SECURITY</option>
-                    <option value="CLEANING">CLEANING</option>
-                  </select>
-                  <select
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
-                    value={staffActiveFilter}
-                    onChange={(e) => setStaffActiveFilter(e.target.value as ActiveFilter)}
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="ACTIVE">Activos</option>
-                    <option value="INACTIVE">Inactivos</option>
-                  </select>
-                  <button
-                    onClick={fetchStaff}
-                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"
-                  >
-                    Buscar
-                  </button>
-                </div>
-              </div>
-              {staffError ? <p className="mb-2 text-xs text-red-600">{staffError}</p> : null}
-              {staffActionMessage ? (
-                <p className="mb-2 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
-                  {staffActionMessage}
-                </p>
-              ) : null}
-              <div className="max-h-[420px] overflow-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-slate-500">
-                      <th className="p-2">Nombre</th>
-                      <th className="p-2">Área</th>
-                      <th className="p-2">Contacto</th>
-                      <th className="p-2">Pend.</th>
-                      <th className="p-2">Comp.</th>
-                      <th className="p-2">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staffLoading ? (
-                      <tr>
-                        <td className="p-2" colSpan={6}>
-                          Cargando...
-                        </td>
-                      </tr>
-                    ) : (
-                      staff.map((item) => (
-                        <tr
-                          key={item.id}
-                          className={`cursor-pointer border-t border-[var(--line)] ${
-                            selectedStaff?.id === item.id ? "bg-emerald-50" : ""
-                          }`}
-                          onClick={() => selectStaffForEdit(item)}
-                        >
-                          <td className="p-2">{item.full_name}</td>
-                          <td className="p-2">
-                            {item.area_name} ({item.category})
-                          </td>
-                          <td className="p-2">
-                            <div className="grid">
-                              <span>{item.email}</span>
-                              <span>{item.phone_number ?? "Sin teléfono"}</span>
-                            </div>
-                          </td>
-                          <td className="p-2">{item.pending_assignments}</td>
-                          <td className="p-2">{item.completed_assignments}</td>
-                          <td className="p-2">{item.is_active ? "Activo" : "Inactivo"}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              <form
-                className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4"
-                onSubmit={createStaffHandler}
-              >
-                <h3 className="text-sm font-semibold">Crear staff</h3>
+          <div className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Staff operativo ({staffTotal})</h2>
+              <div className="flex flex-wrap gap-2">
                 <input
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  placeholder="Nombre completo"
-                  value={newStaffName}
-                  onChange={(e) => setNewStaffName(e.target.value)}
-                  required
-                />
-                <input
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  placeholder="Área"
-                  value={newStaffArea}
-                  onChange={(e) => setNewStaffArea(e.target.value)}
-                  required
-                />
-                <input
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  placeholder="Correo"
-                  type="email"
-                  value={newStaffEmail}
-                  onChange={(e) => setNewStaffEmail(e.target.value)}
-                  required
-                />
-                <input
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  placeholder="Teléfono"
-                  value={newStaffPhone}
-                  onChange={(e) => setNewStaffPhone(e.target.value)}
+                  className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
+                  placeholder="Buscar staff..."
+                  value={staffSearch}
+                  onChange={(e) => setStaffSearch(e.target.value)}
                 />
                 <select
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  value={newStaffCategory}
-                  onChange={(e) => setNewStaffCategory(e.target.value as IncidentCategory)}
+                  className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
+                  value={staffCategoryFilter}
+                  onChange={(e) => setStaffCategoryFilter(e.target.value as IncidentCategory | "")}
                 >
+                  <option value="">Todas categorías</option>
                   <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
                   <option value="SECURITY">SECURITY</option>
                   <option value="CLEANING">CLEANING</option>
                 </select>
                 <select
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                  value={newStaffPriority}
-                  onChange={(e) => setNewStaffPriority(e.target.value as PriorityLevel)}
+                  className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
+                  value={staffActiveFilter}
+                  onChange={(e) => setStaffActiveFilter(e.target.value as ActiveFilter)}
                 >
-                  <option value="LOW">LOW</option>
-                  <option value="MEDIUM">MEDIUM</option>
-                  <option value="HIGH">HIGH</option>
-                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="ALL">Todos</option>
+                  <option value="ACTIVE">Activos</option>
+                  <option value="INACTIVE">Inactivos</option>
                 </select>
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={newStaffActive}
-                    onChange={(e) => setNewStaffActive(e.target.checked)}
-                  />
-                  Activo
-                </label>
-                <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
-                  Crear
+                <button
+                  onClick={fetchStaff}
+                  className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"
+                >
+                  Buscar
                 </button>
-              </form>
-
-              <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
-                <h3 className="text-sm font-semibold">Editar staff</h3>
-                {!selectedStaff ? (
-                  <p className="text-xs text-slate-500">Selecciona un staff.</p>
-                ) : (
-                  <>
-                    <input
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffName}
-                      onChange={(e) => setEditStaffName(e.target.value)}
-                    />
-                    <input
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffArea}
-                      onChange={(e) => setEditStaffArea(e.target.value)}
-                    />
-                    <input
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffEmail}
-                      onChange={(e) => setEditStaffEmail(e.target.value)}
-                    />
-                    <input
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffPhone}
-                      onChange={(e) => setEditStaffPhone(e.target.value)}
-                    />
-                    <select
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffCategory}
-                      onChange={(e) => setEditStaffCategory(e.target.value as IncidentCategory)}
-                    >
-                      <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
-                      <option value="SECURITY">SECURITY</option>
-                      <option value="CLEANING">CLEANING</option>
-                    </select>
-                    <select
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                      value={editStaffPriority}
-                      onChange={(e) => setEditStaffPriority(e.target.value as PriorityLevel)}
-                    >
-                      <option value="LOW">LOW</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="HIGH">HIGH</option>
-                      <option value="CRITICAL">CRITICAL</option>
-                    </select>
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editStaffActive}
-                        onChange={(e) => setEditStaffActive(e.target.checked)}
-                      />
-                      Activo
-                    </label>
-                    <button
-                      onClick={saveStaffEditHandler}
-                      className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white"
-                    >
-                      Guardar cambios
-                    </button>
-                  </>
-                )}
               </div>
+            </div>
+            <p className="mb-2 rounded bg-slate-50 px-2 py-1 text-xs text-slate-600">
+              Alta y edición de staff ahora se realiza solo desde la pestaña Usuarios (rol STAFF).
+            </p>
+            {staffError ? <p className="mb-2 text-xs text-red-600">{staffError}</p> : null}
+            {staffActionMessage ? (
+              <p className="mb-2 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                {staffActionMessage}
+              </p>
+            ) : null}
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="p-2">Nombre</th>
+                    <th className="p-2">Área</th>
+                    <th className="p-2">Contacto</th>
+                    <th className="p-2">Pend.</th>
+                    <th className="p-2">Comp.</th>
+                    <th className="p-2">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffLoading ? (
+                    <tr>
+                      <td className="p-2" colSpan={6}>
+                        Cargando...
+                      </td>
+                    </tr>
+                  ) : (
+                    staff.map((item) => (
+                      <tr
+                        key={item.id}
+                        className={`cursor-pointer border-t border-[var(--line)] ${
+                          selectedStaff?.id === item.id ? "bg-emerald-50" : ""
+                        }`}
+                        onClick={() => selectStaffForAssignment(item)}
+                      >
+                        <td className="p-2">{item.full_name}</td>
+                        <td className="p-2">
+                          {item.area_name} ({item.category})
+                        </td>
+                        <td className="p-2">
+                          <div className="grid">
+                            <span>{item.email}</span>
+                            <span>{item.phone_number ?? "Sin teléfono"}</span>
+                          </div>
+                        </td>
+                        <td className="p-2">{item.pending_assignments}</td>
+                        <td className="p-2">{item.completed_assignments}</td>
+                        <td className="p-2">{item.is_active ? "Activo" : "Inactivo"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-            <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
               <h3 className="text-sm font-semibold">Asignación manual y estado de incidencia</h3>
               <select
                 value={assignIncidentId}
@@ -1065,7 +933,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
               <h3 className="text-sm font-semibold">
                 Incidencias asignadas {selectedStaff ? `(${selectedStaff.full_name})` : ""}
               </h3>
@@ -1128,7 +996,7 @@ export default function AdminDashboardPage() {
 
       {tab === "ZONES" ? (
         <section className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <div className="rounded-2xl border border-[var(--line)] bg-white p-4">
+          <div className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Zonas del campus ({zonesTotal})</h2>
               <div className="flex flex-wrap gap-2">
@@ -1213,7 +1081,7 @@ export default function AdminDashboardPage() {
 
           <div className="grid gap-4">
             <form
-              className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4"
+              className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4"
               onSubmit={createZoneHandler}
             >
               <h3 className="text-sm font-semibold">Crear zona</h3>
@@ -1258,7 +1126,7 @@ export default function AdminDashboardPage() {
               </button>
             </form>
 
-            <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
               <h3 className="text-sm font-semibold">Editar zona</h3>
               {!selectedZone ? (
                 <p className="text-xs text-slate-500">Selecciona una zona del listado.</p>
@@ -1311,7 +1179,7 @@ export default function AdminDashboardPage() {
 
       {tab === "USERS" ? (
         <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-2xl border border-[var(--line)] bg-white p-4">
+          <div className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Usuarios ({usersTotal})</h2>
               <div className="flex gap-2">
@@ -1383,7 +1251,7 @@ export default function AdminDashboardPage() {
 
           <div className="grid gap-4">
             <form
-              className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4"
+              className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4"
               onSubmit={createUser}
             >
               <h3 className="text-sm font-semibold">Crear usuario</h3>
@@ -1427,12 +1295,48 @@ export default function AdminDashboardPage() {
                 <option value="STAFF">STAFF</option>
                 <option value="ADMIN">ADMIN</option>
               </select>
+              {newRole === "STAFF" ? (
+                <>
+                  <input
+                    className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                    placeholder="Área staff (ej. Seguridad UCH)"
+                    value={newStaffAreaName}
+                    onChange={(e) => setNewStaffAreaName(e.target.value)}
+                    required
+                  />
+                  <input
+                    className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                    placeholder="Teléfono staff (opcional)"
+                    value={newStaffPhoneNumber}
+                    onChange={(e) => setNewStaffPhoneNumber(e.target.value)}
+                  />
+                  <select
+                    className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                    value={newStaffCategory}
+                    onChange={(e) => setNewStaffCategory(e.target.value as IncidentCategory)}
+                  >
+                    <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
+                    <option value="SECURITY">SECURITY</option>
+                    <option value="CLEANING">CLEANING</option>
+                  </select>
+                  <select
+                    className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                    value={newStaffMinPriority}
+                    onChange={(e) => setNewStaffMinPriority(e.target.value as PriorityLevel)}
+                  >
+                    <option value="LOW">LOW</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="CRITICAL">CRITICAL</option>
+                  </select>
+                </>
+              ) : null}
               <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
                 Crear
               </button>
             </form>
 
-            <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
               <h3 className="text-sm font-semibold">Editar usuario</h3>
               {!selectedUser ? (
                 <p className="text-xs text-slate-500">Selecciona un usuario.</p>
@@ -1457,6 +1361,42 @@ export default function AdminDashboardPage() {
                     <option value="STAFF">STAFF</option>
                     <option value="ADMIN">ADMIN</option>
                   </select>
+                  {editRole === "STAFF" ? (
+                    <>
+                      <input
+                        className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                        placeholder="Área staff"
+                        value={editStaffAreaName}
+                        onChange={(e) => setEditStaffAreaName(e.target.value)}
+                        required
+                      />
+                      <input
+                        className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                        placeholder="Teléfono staff (opcional)"
+                        value={editStaffPhoneNumber}
+                        onChange={(e) => setEditStaffPhoneNumber(e.target.value)}
+                      />
+                      <select
+                        className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                        value={editStaffCategory}
+                        onChange={(e) => setEditStaffCategory(e.target.value as IncidentCategory)}
+                      >
+                        <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
+                        <option value="SECURITY">SECURITY</option>
+                        <option value="CLEANING">CLEANING</option>
+                      </select>
+                      <select
+                        className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+                        value={editStaffMinPriority}
+                        onChange={(e) => setEditStaffMinPriority(e.target.value as PriorityLevel)}
+                      >
+                        <option value="LOW">LOW</option>
+                        <option value="MEDIUM">MEDIUM</option>
+                        <option value="HIGH">HIGH</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                      </select>
+                    </>
+                  ) : null}
                   <select
                     className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
                     value={editStatus}
@@ -1488,4 +1428,5 @@ export default function AdminDashboardPage() {
     </main>
   );
 }
+
 

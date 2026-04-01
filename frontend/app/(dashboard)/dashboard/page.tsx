@@ -61,42 +61,53 @@ export default function DashboardPage() {
 
   if (!token) {
     return (
-      <main className="mx-auto flex w-full max-w-lg flex-1 px-4 py-10 sm:px-6">
-        <form
-          className="grid w-full gap-3 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm"
-          onSubmit={handleLogin}
-        >
-          <h1 className="font-heading text-xl font-semibold text-emerald-900">
-            Login para dashboard
-          </h1>
-          <label className="grid gap-1 text-sm">
-            Codigo campus
-            <input
-              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
-              value={campusId}
-              onChange={(e) => setCampusId(e.target.value)}
-              required
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            Contrasena
-            <input
-              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-            />
-          </label>
-          {authError ? <p className="text-sm text-red-600">{authError}</p> : null}
-          <button
-            disabled={authLoading}
-            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-70"
-          >
-            {authLoading ? "Ingresando..." : "Entrar"}
-          </button>
-        </form>
+      <main className="admin-login-stage mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-4 py-8 sm:px-6">
+        <div className="admin-login-frame">
+          <div className="admin-login-border" />
+          <form className="admin-login-card" onSubmit={handleLogin}>
+            <div className="space-y-1">
+              <p className="admin-login-kicker">Acceso general</p>
+              <h1 className="font-heading text-2xl font-semibold leading-tight text-emerald-950">
+                Login para dashboard
+              </h1>
+              <p className="text-xs text-slate-600">
+                Ingresa con tu codigo campus para gestionar incidencias.
+              </p>
+            </div>
+
+            <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+              Codigo campus
+              <input
+                className="admin-login-input"
+                value={campusId}
+                onChange={(e) => setCampusId(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+              Contrasena
+              <input
+                className="admin-login-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                required
+              />
+            </label>
+
+            {authError ? (
+              <p className="rounded-lg border border-red-200 bg-red-50/90 px-3 py-2 text-xs text-red-700">
+                {authError}
+              </p>
+            ) : null}
+
+            <button disabled={authLoading} className="admin-login-submit">
+              {authLoading ? "Ingresando..." : "Entrar"}
+            </button>
+          </form>
+        </div>
       </main>
     );
   }

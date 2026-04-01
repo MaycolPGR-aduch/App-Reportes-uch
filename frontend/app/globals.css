@@ -37,3 +37,241 @@ body {
 .font-mono {
   font-family: "Consolas", "Courier New", monospace;
 }
+
+@keyframes adminBorderSpin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.admin-login-stage {
+  position: relative;
+  min-height: calc(100vh - 4rem);
+  overflow: hidden;
+}
+
+.admin-login-stage::before,
+.admin-login-stage::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(54px);
+  pointer-events: none;
+}
+
+.admin-login-stage::before {
+  width: 21rem;
+  height: 21rem;
+  left: -5rem;
+  top: 1.5rem;
+  background: rgba(52, 211, 153, 0.35);
+}
+
+.admin-login-stage::after {
+  width: 24rem;
+  height: 24rem;
+  right: -6rem;
+  bottom: 1.5rem;
+  background: rgba(125, 211, 252, 0.28);
+}
+
+.admin-login-frame {
+  position: relative;
+  width: 100%;
+  max-width: 27rem;
+}
+
+.admin-login-border {
+  position: absolute;
+  inset: -1px;
+  border-radius: 1.75rem;
+  background: conic-gradient(
+    from 0deg,
+    rgba(15, 118, 110, 0.95),
+    rgba(20, 184, 166, 0.8),
+    rgba(125, 211, 252, 0.75),
+    rgba(15, 118, 110, 0.95)
+  );
+  animation: adminBorderSpin 9s linear infinite;
+  filter: blur(0.3px);
+  z-index: 0;
+}
+
+.admin-login-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1rem;
+  padding: 1.6rem;
+  border-radius: 1.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 60px -30px rgba(15, 118, 110, 0.75);
+}
+
+.admin-login-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(4, 120, 87, 0.9);
+}
+
+.admin-login-input {
+  height: 2.75rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(167, 243, 208, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  padding: 0 0.8rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.admin-login-input:focus {
+  border-color: #10b981;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(167, 243, 208, 0.65);
+}
+
+.admin-login-submit {
+  height: 2.75rem;
+  border-radius: 0.8rem;
+  border: none;
+  background: linear-gradient(90deg, #047857, #0d9488);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 10px 24px -12px rgba(13, 148, 136, 0.95);
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.admin-login-submit:hover {
+  filter: brightness(1.05);
+}
+
+.admin-login-submit:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-login-border {
+    animation: none;
+  }
+}
+
+@keyframes adminFormBorderSpin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes adminPanelGlow {
+  0% {
+    box-shadow: 0 18px 46px -32px rgba(15, 118, 110, 0.32);
+  }
+  50% {
+    box-shadow: 0 18px 52px -30px rgba(13, 148, 136, 0.4);
+  }
+  100% {
+    box-shadow: 0 18px 46px -32px rgba(15, 118, 110, 0.32);
+  }
+}
+
+.admin-dashboard-pro .admin-panel {
+  position: relative;
+  background: rgba(255, 255, 255, 0.66) !important;
+  backdrop-filter: blur(9px);
+  border-color: rgba(167, 243, 208, 0.62) !important;
+  box-shadow: 0 18px 46px -32px rgba(15, 118, 110, 0.32);
+  animation: adminPanelGlow 7s ease-in-out infinite;
+}
+
+.admin-dashboard-pro .admin-form-surface {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.admin-dashboard-pro .admin-form-surface::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -2;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    rgba(13, 148, 136, 0.78),
+    rgba(45, 212, 191, 0.62),
+    rgba(125, 211, 252, 0.6),
+    rgba(13, 148, 136, 0.78)
+  );
+  animation: adminFormBorderSpin 14s linear infinite;
+  opacity: 0.78;
+}
+
+.admin-dashboard-pro .admin-form-surface::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: calc(1rem - 1px);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.admin-dashboard-pro .admin-panel input:not([type="checkbox"]):not([type="radio"]),
+.admin-dashboard-pro .admin-panel select {
+  height: 2.35rem;
+  border-color: rgba(167, 243, 208, 0.85) !important;
+  background: rgba(255, 255, 255, 0.84) !important;
+  font-size: 0.86rem !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.admin-dashboard-pro .admin-panel textarea {
+  border-color: rgba(167, 243, 208, 0.85) !important;
+  background: rgba(255, 255, 255, 0.84) !important;
+  font-size: 0.84rem !important;
+  line-height: 1.35;
+}
+
+.admin-dashboard-pro .admin-panel input:focus,
+.admin-dashboard-pro .admin-panel select:focus,
+.admin-dashboard-pro .admin-panel textarea:focus {
+  outline: none;
+  border-color: rgba(16, 185, 129, 0.95) !important;
+  box-shadow: 0 0 0 3px rgba(167, 243, 208, 0.56);
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+.admin-dashboard-pro .admin-panel button[class*="bg-emerald"] {
+  box-shadow: 0 10px 22px -14px rgba(13, 148, 136, 0.95);
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.admin-dashboard-pro .admin-panel button[class*="bg-emerald"]:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard-pro .admin-panel {
+    animation-duration: 9s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-dashboard-pro .admin-panel,
+  .admin-dashboard-pro .admin-form-surface::before {
+    animation: none;
+  }
+
+  .admin-dashboard-pro .admin-panel button[class*="bg-emerald"]:hover {
+    transform: none;
+  }
+}

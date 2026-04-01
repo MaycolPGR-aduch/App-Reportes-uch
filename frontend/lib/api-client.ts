@@ -461,6 +461,10 @@ export async function createAdminUser(
     email: string;
     password: string;
     role: UserRole;
+    staff_area_name?: string;
+    staff_phone_number?: string | null;
+    staff_category?: IncidentCategory;
+    staff_min_priority?: PriorityLevel;
   },
 ): Promise<AdminUser> {
   return request<AdminUser>("/admin/users", {
@@ -482,6 +486,10 @@ export async function updateAdminUser(
     role?: UserRole;
     status?: UserStatus;
     password?: string;
+    staff_area_name?: string;
+    staff_phone_number?: string | null;
+    staff_category?: IncidentCategory;
+    staff_min_priority?: PriorityLevel;
   },
 ): Promise<AdminUser> {
   return request<AdminUser>(`/admin/users/${userId}`, {

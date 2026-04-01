@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
+import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -66,6 +68,164 @@ PRIORITY_SLA_HOURS = {
     PriorityLevel.MEDIUM: 24,
     PriorityLevel.LOW: 72,
 }
+
+DEFAULT_STAFF_AREA_NAME = "Area general"
+DEFAULT_STAFF_TEMP_PASSWORD_PREFIX = "StaffTemp#"
+
+
+def _normalized_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _get_user_by_email(db: Session, email: str) -> User | None:
+    return db.query(User).filter(func.lower(User.email) == _normalized_email(email)).first()
+
+
+def _generate_unique_staff_campus_id(db: Session, email: str) -> str:
+    local_part = email.split("@", 1)[0]
+    cleaned = re.sub(r"[^a-z0-9]+", "", local_part.lower())
+    base = f"staff{cleaned}"[:58]
+    if len(base) < 3:
+        base = "staff"
+
+    candidate = base
+    counter = 1
+    while db.query(User.id).filter(User.campus_id == candidate).first() is not None:
+        suffix = str(counter)
+        candidate = f"{base[: max(3, 64 - len(suffix))]}{suffix}"
+        counter += 1
+    return candidate
+
+
+def _create_staff_user(
+    db: Session,
+    *,
+    email: str,
+    full_name: str,
+    is_active: bool,
+) -> User:
+    temp_password = f"{DEFAULT_STAFF_TEMP_PASSWORD_PREFIX}{secrets.token_urlsafe(10)}"
+    user = User(
+        campus_id=_generate_unique_staff_campus_id(db, email),
+        full_name=full_name.strip(),
+        email=_normalized_email(email),
+        password_hash=hash_password(temp_password),
+        role=UserRole.STAFF,
+        status=UserStatus.ACTIVE if is_active else UserStatus.INACTIVE,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _ensure_default_responsible_for_staff_user(db: Session, user: User) -> Responsible:
+    existing = (
+        db.query(Responsible).filter(func.lower(Responsible.email) == _normalized_email(user.email)).first()
+    )
+    if existing:
+        return existing
+
+    responsible = Responsible(
+        full_name=user.full_name,
+        area_name=DEFAULT_STAFF_AREA_NAME,
+        email=_normalized_email(user.email),
+        phone_number=None,
+        category=IncidentCategory.INFRASTRUCTURE,
+        min_priority=PriorityLevel.MEDIUM,
+        is_active=user.status == UserStatus.ACTIVE,
+    )
+    db.add(responsible)
+    db.flush()
+    return responsible
+
+
+def _apply_staff_profile_fields(
+    db: Session,
+    *,
+    staff_profile: Responsible,
+    email: str,
+    area_name: str | None,
+    phone_number: str | None,
+    category: IncidentCategory | None,
+    min_priority: PriorityLevel | None,
+) -> None:
+    if area_name is not None:
+        staff_profile.area_name = area_name.strip()
+
+    if phone_number is not None:
+        staff_profile.phone_number = phone_number.strip() or None
+
+    if min_priority is not None:
+        staff_profile.min_priority = min_priority
+
+    if category is not None and staff_profile.category != category:
+        collision = (
+            db.query(Responsible)
+            .filter(
+                Responsible.id != staff_profile.id,
+                func.lower(Responsible.email) == _normalized_email(email),
+                Responsible.category == category,
+            )
+            .first()
+        )
+        if collision:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe otro perfil staff con el mismo correo y categoría",
+            )
+        staff_profile.category = category
+
+
+def _sync_staff_catalog(db: Session) -> None:
+    changed = False
+    responsibles = db.query(Responsible).order_by(Responsible.created_at.asc()).all()
+    by_email: dict[str, list[Responsible]] = {}
+    for responsible in responsibles:
+        key = _normalized_email(responsible.email)
+        if key not in by_email:
+            by_email[key] = []
+        by_email[key].append(responsible)
+
+    users = db.query(User).all()
+    users_by_email = {_normalized_email(user.email): user for user in users}
+
+    for email_key, staff_profiles in by_email.items():
+        unified_active = any(profile.is_active for profile in staff_profiles)
+        canonical_name = staff_profiles[0].full_name.strip()
+        user = users_by_email.get(email_key)
+        if user is None:
+            user = _create_staff_user(
+                db,
+                email=email_key,
+                full_name=canonical_name,
+                is_active=unified_active,
+            )
+            users_by_email[email_key] = user
+            changed = True
+        else:
+            if user.role != UserRole.STAFF:
+                user.role = UserRole.STAFF
+                changed = True
+            desired_status = UserStatus.ACTIVE if unified_active else UserStatus.INACTIVE
+            if user.status != desired_status:
+                user.status = desired_status
+                changed = True
+
+        desired_responsible_active = user.status == UserStatus.ACTIVE
+        for profile in staff_profiles:
+            if profile.is_active != desired_responsible_active:
+                profile.is_active = desired_responsible_active
+                changed = True
+
+    for user in users_by_email.values():
+        if user.role != UserRole.STAFF:
+            continue
+        if _normalized_email(user.email) not in by_email:
+            _ensure_default_responsible_for_staff_user(db, user)
+            changed = True
+
+    if changed:
+        db.commit()
 
 
 def _user_out(user: User) -> AdminUserOut:
@@ -264,6 +424,8 @@ def list_users_admin(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> AdminUserListResponse:
+    _sync_staff_catalog(db)
+
     query = db.query(User)
 
     filters = []
@@ -294,11 +456,33 @@ def create_user_admin(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> AdminUserOut:
+    payload_data = payload.model_dump(exclude_unset=True)
     campus_id = payload.campus_id.strip()
     email = payload.email.strip().lower()
     exists = db.query(User).filter((User.campus_id == campus_id) | (User.email == email)).first()
     if exists:
         raise HTTPException(status_code=409, detail="Campus ID or email already registered")
+    if payload.role != UserRole.STAFF and (
+        "staff_area_name" in payload_data
+        or "staff_phone_number" in payload_data
+        or "staff_category" in payload_data
+        or "staff_min_priority" in payload_data
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Los campos de staff solo se permiten cuando el rol es STAFF.",
+        )
+    if payload.role != UserRole.STAFF:
+        existing_staff_profile = (
+            db.query(Responsible)
+            .filter(func.lower(Responsible.email) == _normalized_email(email))
+            .first()
+        )
+        if existing_staff_profile:
+            raise HTTPException(
+                status_code=409,
+                detail="El correo ya está vinculado a staff operativo. Usa rol STAFF para este usuario.",
+            )
 
     user = User(
         campus_id=campus_id,
@@ -309,6 +493,18 @@ def create_user_admin(
         status=UserStatus.ACTIVE,
     )
     db.add(user)
+    db.flush()
+    if user.role == UserRole.STAFF:
+        profile = _ensure_default_responsible_for_staff_user(db, user)
+        _apply_staff_profile_fields(
+            db,
+            staff_profile=profile,
+            email=user.email,
+            area_name=payload.staff_area_name,
+            phone_number=payload.staff_phone_number,
+            category=payload.staff_category,
+            min_priority=payload.staff_min_priority,
+        )
     db.commit()
     db.refresh(user)
     return _user_out(user)
@@ -321,9 +517,11 @@ def update_user_admin(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ) -> AdminUserOut:
+    payload_data = payload.model_dump(exclude_unset=True)
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    previous_email = _normalized_email(user.email)
 
     if payload.email is not None:
         email = payload.email.strip().lower()
@@ -342,6 +540,74 @@ def update_user_admin(
     if payload.password:
         user.password_hash = hash_password(payload.password)
 
+    if _normalized_email(user.email) != previous_email:
+        related_staff_profiles = (
+            db.query(Responsible).filter(func.lower(Responsible.email) == previous_email).all()
+        )
+        next_email = _normalized_email(user.email)
+        for staff_profile in related_staff_profiles:
+            collision = (
+                db.query(Responsible)
+                .filter(
+                    Responsible.id != staff_profile.id,
+                    func.lower(Responsible.email) == next_email,
+                    Responsible.category == staff_profile.category,
+                )
+                .first()
+            )
+            if collision:
+                raise HTTPException(
+                    status_code=409,
+                    detail="No se puede cambiar email: ya existe staff con ese correo y categoría",
+                )
+        for staff_profile in related_staff_profiles:
+            staff_profile.email = next_email
+
+    linked_staff_profiles = (
+        db.query(Responsible)
+        .filter(func.lower(Responsible.email) == _normalized_email(user.email))
+        .order_by(Responsible.created_at.asc())
+        .all()
+    )
+    if user.role != UserRole.STAFF and (
+        "staff_area_name" in payload_data
+        or "staff_phone_number" in payload_data
+        or "staff_category" in payload_data
+        or "staff_min_priority" in payload_data
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Los campos de staff solo se permiten cuando el rol es STAFF.",
+        )
+    if user.role == UserRole.STAFF:
+        if not linked_staff_profiles:
+            linked_staff_profiles = [_ensure_default_responsible_for_staff_user(db, user)]
+        desired_active = user.status == UserStatus.ACTIVE
+        for staff_profile in linked_staff_profiles:
+            staff_profile.full_name = user.full_name
+            staff_profile.is_active = desired_active
+
+        primary_profile = linked_staff_profiles[0]
+        _apply_staff_profile_fields(
+            db,
+            staff_profile=primary_profile,
+            email=user.email,
+            area_name=payload.staff_area_name if "staff_area_name" in payload_data else None,
+            phone_number=(
+                payload.staff_phone_number if "staff_phone_number" in payload_data else None
+            ),
+            category=payload.staff_category if "staff_category" in payload_data else None,
+            min_priority=(
+                payload.staff_min_priority if "staff_min_priority" in payload_data else None
+            ),
+        )
+    else:
+        if linked_staff_profiles:
+            raise HTTPException(
+                status_code=409,
+                detail="No puedes cambiar a rol no STAFF mientras existan perfiles en Staff operativo.",
+            )
+
     db.commit()
     db.refresh(user)
     return _user_out(user)
@@ -359,6 +625,13 @@ def ban_user_admin(
     if user.id == current_admin.id:
         raise HTTPException(status_code=400, detail="No puedes banear tu propia cuenta")
     user.status = UserStatus.INACTIVE
+    staff_profiles = (
+        db.query(Responsible)
+        .filter(func.lower(Responsible.email) == _normalized_email(user.email))
+        .all()
+    )
+    for staff_profile in staff_profiles:
+        staff_profile.is_active = False
     db.commit()
     db.refresh(user)
     return _user_out(user)
@@ -374,6 +647,16 @@ def unban_user_admin(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.status = UserStatus.ACTIVE
+    if user.role == UserRole.STAFF:
+        staff_profiles = (
+            db.query(Responsible)
+            .filter(func.lower(Responsible.email) == _normalized_email(user.email))
+            .all()
+        )
+        if not staff_profiles:
+            staff_profiles = [_ensure_default_responsible_for_staff_user(db, user)]
+        for staff_profile in staff_profiles:
+            staff_profile.is_active = True
     db.commit()
     db.refresh(user)
     return _user_out(user)
@@ -389,6 +672,8 @@ def list_staff(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> StaffListResponse:
+    _sync_staff_catalog(db)
+
     filters = []
     if search:
         like = f"%{search.strip()}%"
@@ -467,7 +752,14 @@ def create_staff(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> StaffOut:
-    email = payload.email.strip().lower()
+    email = _normalized_email(payload.email)
+    linked_user = _get_user_by_email(db, email)
+    if linked_user is not None and linked_user.role != UserRole.STAFF:
+        raise HTTPException(
+            status_code=409,
+            detail="El correo ya existe en usuarios con un rol diferente a STAFF",
+        )
+
     exists = (
         db.query(Responsible)
         .filter(
@@ -478,6 +770,17 @@ def create_staff(
     )
     if exists:
         raise HTTPException(status_code=409, detail="Email ya existe para esa categoria")
+
+    if linked_user is None:
+        linked_user = _create_staff_user(
+            db,
+            email=email,
+            full_name=payload.full_name,
+            is_active=payload.is_active,
+        )
+    else:
+        linked_user.full_name = payload.full_name.strip()
+        linked_user.status = UserStatus.ACTIVE if payload.is_active else UserStatus.INACTIVE
 
     staff = Responsible(
         full_name=payload.full_name.strip(),
@@ -504,6 +807,7 @@ def update_staff(
     staff = db.get(Responsible, staff_id)
     if staff is None:
         raise HTTPException(status_code=404, detail="Staff no encontrado")
+    current_email = _normalized_email(staff.email)
 
     payload_data = payload.model_dump(exclude_unset=True)
     if "full_name" in payload_data and payload.full_name is not None:
@@ -519,7 +823,7 @@ def update_staff(
 
     next_email = staff.email
     if "email" in payload_data and payload.email is not None:
-        next_email = payload.email.strip().lower()
+        next_email = _normalized_email(payload.email)
     next_category = staff.category
     if "category" in payload_data and payload.category is not None:
         next_category = payload.category
@@ -535,6 +839,41 @@ def update_staff(
     )
     if collision:
         raise HTTPException(status_code=409, detail="Email ya existe para esa categoria")
+
+    linked_user = _get_user_by_email(db, current_email)
+    target_user = _get_user_by_email(db, next_email)
+
+    if linked_user is not None and linked_user.role != UserRole.STAFF:
+        raise HTTPException(
+            status_code=409,
+            detail="El correo actual pertenece a un usuario con rol no STAFF",
+        )
+    if target_user is not None and target_user.role != UserRole.STAFF:
+        if linked_user is None or target_user.id != linked_user.id:
+            raise HTTPException(
+                status_code=409,
+                detail="El nuevo correo ya existe en usuarios con un rol diferente a STAFF",
+            )
+
+    if linked_user is None:
+        linked_user = target_user
+    elif target_user is not None and target_user.id != linked_user.id:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya existe otro usuario STAFF con ese correo",
+        )
+
+    if linked_user is None:
+        linked_user = _create_staff_user(
+            db,
+            email=next_email,
+            full_name=staff.full_name,
+            is_active=staff.is_active,
+        )
+
+    linked_user.email = next_email
+    linked_user.full_name = staff.full_name
+    linked_user.status = UserStatus.ACTIVE if staff.is_active else UserStatus.INACTIVE
 
     staff.email = next_email
     staff.category = next_category
