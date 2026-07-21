@@ -20,6 +20,9 @@ class StorageProvider:
     def save_incident_image(self, *, content: bytes, mime_type: str) -> StoredFile:
         raise NotImplementedError
 
+    def delete(self, relative_path: str) -> None:
+        raise NotImplementedError
+
 
 class LocalStorageProvider(StorageProvider):
     EXT_BY_MIME = {
@@ -56,3 +59,8 @@ class LocalStorageProvider(StorageProvider):
             mime_type=mime_type,
         )
 
+    def delete(self, relative_path: str) -> None:
+        candidate = (self.base_dir.parent / relative_path).resolve()
+        if self.base_dir.parent.resolve() not in candidate.parents:
+            return
+        candidate.unlink(missing_ok=True)

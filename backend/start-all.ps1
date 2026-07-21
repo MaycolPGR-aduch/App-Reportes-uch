@@ -53,13 +53,19 @@ $aiProcess = Start-DevWindow `
   -Command "& '$pythonExe' -m app.workers.ai_worker" `
   -StartupMessage "Servicio AI Worker iniciado correctamente."
 
+$maintenanceProcess = Start-DevWindow `
+  -Name "Maintenance Worker" `
+  -Command "& '$pythonExe' -m app.workers.maintenance_worker" `
+  -StartupMessage "Servicio Maintenance Worker iniciado correctamente."
+
 $state = @{
   started_at = (Get-Date).ToString("o")
   backend_dir = $backendDir
   processes  = @(
     @{ name = "api"; pid = $apiProcess.Id },
     @{ name = "notification_worker"; pid = $notificationProcess.Id },
-    @{ name = "ai_worker"; pid = $aiProcess.Id }
+    @{ name = "ai_worker"; pid = $aiProcess.Id },
+    @{ name = "maintenance_worker"; pid = $maintenanceProcess.Id }
   )
 }
 
@@ -70,5 +76,6 @@ Write-Host "Procesos iniciados:" -ForegroundColor Green
 Write-Host "  API:                 PID $($apiProcess.Id)"
 Write-Host "  Notification Worker: PID $($notificationProcess.Id)"
 Write-Host "  AI Worker:           PID $($aiProcess.Id)"
+Write-Host "  Maintenance Worker:  PID $($maintenanceProcess.Id)"
 Write-Host ""
 Write-Host "Para detenerlos:  .\stop-all.ps1" -ForegroundColor Cyan

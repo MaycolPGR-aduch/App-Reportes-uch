@@ -783,6 +783,7 @@ def create_staff(
         linked_user.status = UserStatus.ACTIVE if payload.is_active else UserStatus.INACTIVE
 
     staff = Responsible(
+        user_id=linked_user.id,
         full_name=payload.full_name.strip(),
         area_name=payload.area_name.strip(),
         email=email,
@@ -873,6 +874,7 @@ def update_staff(
 
     linked_user.email = next_email
     linked_user.full_name = staff.full_name
+    staff.user_id = linked_user.id
     linked_user.status = UserStatus.ACTIVE if staff.is_active else UserStatus.INACTIVE
 
     staff.email = next_email

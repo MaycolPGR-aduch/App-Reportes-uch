@@ -9,13 +9,12 @@ import {
   UserRole,
   analyzeReportImage,
   createReport,
+  getCurrentUser,
   login,
+  logout,
   registerUser,
 } from "@/lib/api-client";
-
-const TOKEN_KEY = "campus_access_token";
-const ROLE_KEY = "campus_user_role";
-const CAMPUS_ID_KEY = "campus_user_id";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 
 type Coordinates = {
   latitude: number;
@@ -56,20 +55,19 @@ export function ReportForm() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(TOKEN_KEY);
-    const storedRole = window.localStorage.getItem(ROLE_KEY) as UserRole | null;
-    const storedCampusId = window.localStorage.getItem(CAMPUS_ID_KEY);
-
-    if (storedToken) {
-      setToken(storedToken);
-      setRole(storedRole);
-      setCampusIdStored(storedCampusId);
-      setMode("AUTHENTICATED");
-    }
+    getCurrentUser()
+      .then((user) => {
+        setToken("cookie-session");
+        setRole(user.role);
+        setCampusIdStored(user.campus_id);
+        setMode("AUTHENTICATED");
+      })
+      .catch(() => undefined);
   }, []);
 
   const previewUrl = useMemo(() => {
@@ -89,10 +87,7 @@ export function ReportForm() {
     setAuthError(null);
     try {
       const response = await login(campusId.trim(), password);
-      window.localStorage.setItem(TOKEN_KEY, response.access_token);
-      window.localStorage.setItem(ROLE_KEY, response.role);
-      window.localStorage.setItem(CAMPUS_ID_KEY, response.campus_id);
-      setToken(response.access_token);
+      setToken("cookie-session");
       setRole(response.role);
       setCampusIdStored(response.campus_id);
       setPassword("");
@@ -124,15 +119,9 @@ export function ReportForm() {
         email: email.trim(),
         password,
       });
-      window.localStorage.setItem(TOKEN_KEY, response.access_token);
-      window.localStorage.setItem(ROLE_KEY, response.role);
-      window.localStorage.setItem(CAMPUS_ID_KEY, response.campus_id);
-      setToken(response.access_token);
-      setRole(response.role);
-      setCampusIdStored(response.campus_id);
       setPassword("");
-      setSubmitSuccess("Cuenta creada correctamente. Ya puedes reportar.");
-      setMode("AUTHENTICATED");
+      setSubmitSuccess(response.message);
+      setMode("ANONYMOUS");
       router.push("/");
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "No se pudo crear la cuenta");
@@ -142,9 +131,7 @@ export function ReportForm() {
   };
 
   const handleLogout = () => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.localStorage.removeItem(ROLE_KEY);
-    window.localStorage.removeItem(CAMPUS_ID_KEY);
+    void logout().catch(() => undefined);
     setToken(null);
     setRole(null);
     setCampusIdStored(null);
@@ -194,7 +181,7 @@ export function ReportForm() {
       }
 
       const authToken = mode === "AUTHENTICATED" ? token : null;
-      const result = await analyzeReportImage(authToken, formData);
+      const result = await analyzeReportImage(authToken, formData, turnstileToken);
       setAnalysis(result);
 
       if (result.suggested_title) {
@@ -269,7 +256,7 @@ export function ReportForm() {
     setSubmitSuccess(null);
     try {
       const authToken = mode === "AUTHENTICATED" ? token : null;
-      const response = await createReport(authToken, formData);
+      const response = await createReport(authToken, formData, turnstileToken);
       const prefix = mode === "ANONYMOUS" ? "Reporte anonimo enviado" : "Incidencia enviada";
       setSubmitSuccess(
         `${prefix} (${response.incident_id.slice(0, 8)}). Estado IA: ${response.ai_status}`,
@@ -432,6 +419,7 @@ export function ReportForm() {
         ) : null}
 
         <form className="grid gap-5" onSubmit={handleSubmit}>
+          {mode === "ANONYMOUS" ? <TurnstileWidget onToken={setTurnstileToken} /> : null}
           <div className="grid gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
             <p className="text-sm font-semibold text-emerald-900">1. Evidencia fotografica</p>
             <input

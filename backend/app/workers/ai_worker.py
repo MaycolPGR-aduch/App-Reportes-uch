@@ -16,7 +16,7 @@ from app.models.enums import IncidentStatus, JobType, PriorityLevel
 from app.models.incident import Incident
 from app.models.responsible import Responsible
 from app.services.ai import classify_incident
-from app.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job
+from app.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job, recover_expired_leases
 
 PRIORITY_SLA_HOURS = {
     PriorityLevel.CRITICAL: 2,
@@ -120,11 +120,14 @@ def run_worker() -> None:
 
     while True:
         with SessionLocal() as db:
+            recover_expired_leases(db, lease_seconds=settings.job_lease_seconds)
             job = claim_next_job(db, job_type=JobType.CLASSIFY_INCIDENT, worker_id=worker_id)
             if job is None:
                 db.commit()
                 time.sleep(poll)
                 continue
+            # Persist the lease before any network request to Gemini.
+            db.commit()
 
             incident = (
                 db.query(Incident)

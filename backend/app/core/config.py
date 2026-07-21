@@ -20,6 +20,22 @@ class Settings:
     auto_create_schema: bool
     jwt_secret: str
     jwt_exp_minutes: int
+    session_cookie_name: str
+    csrf_cookie_name: str
+    cookie_secure: bool
+    cookie_samesite: str
+    allowed_email_domains: list[str]
+    trusted_hosts: list[str]
+    turnstile_secret_key: str | None
+    require_turnstile: bool
+    rate_limit_login: int
+    rate_limit_public_report: int
+    rate_limit_image_analysis: int
+    max_image_pixels: int
+    job_lease_seconds: int
+    retention_days: int
+    backup_s3_bucket: str | None
+    backup_s3_prefix: str
     cors_origins: list[str]
     local_storage_path: Path
     max_image_size_mb: int
@@ -35,6 +51,7 @@ class Settings:
     sendgrid_from_email: str | None
     default_alert_email: str | None
     dashboard_base_url: str
+    frontend_base_url: str
     worker_poll_seconds: float
     classification_retry_delay_seconds: int
     notification_retry_delay_seconds: int
@@ -62,17 +79,42 @@ def get_settings() -> Settings:
     if not cors_origins:
         cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    app_env = os.getenv("APP_ENV", "development")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if app_env.lower() == "production" and (
+        not jwt_secret or jwt_secret == "change-this-secret-in-production"
+    ):
+        raise RuntimeError("JWT_SECRET must be configured in production")
+    if app_env.lower() == "production" and (not cors_origins or "*" in cors_origins):
+        raise RuntimeError("CORS_ORIGINS must contain explicit origins in production")
+
     return Settings(
         app_name=os.getenv("APP_NAME", "Campus Incidents API"),
-        app_env=os.getenv("APP_ENV", "development"),
+        app_env=app_env,
         app_debug=_as_bool(os.getenv("APP_DEBUG"), default=False),
         database_url=os.getenv(
             "DATABASE_URL",
             "postgresql+psycopg2://postgres:postgres@localhost:5432/campus_incidents",
         ),
         auto_create_schema=_as_bool(os.getenv("AUTO_CREATE_SCHEMA"), default=False),
-        jwt_secret=os.getenv("JWT_SECRET", "change-this-secret-in-production"),
+        jwt_secret=jwt_secret or "development-only-secret-change-me",
         jwt_exp_minutes=int(os.getenv("JWT_EXP_MINUTES", "480")),
+        session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "campus_session"),
+        csrf_cookie_name=os.getenv("CSRF_COOKIE_NAME", "campus_csrf"),
+        cookie_secure=_as_bool(os.getenv("COOKIE_SECURE"), default=app_env.lower() == "production"),
+        cookie_samesite=os.getenv("COOKIE_SAMESITE", "lax").strip().lower(),
+        allowed_email_domains=[domain.lower() for domain in _as_list(os.getenv("ALLOWED_EMAIL_DOMAINS"))],
+        trusted_hosts=_as_list(os.getenv("TRUSTED_HOSTS")),
+        turnstile_secret_key=os.getenv("TURNSTILE_SECRET_KEY"),
+        require_turnstile=_as_bool(os.getenv("REQUIRE_TURNSTILE"), default=app_env.lower() == "production"),
+        rate_limit_login=int(os.getenv("RATE_LIMIT_LOGIN", "5")),
+        rate_limit_public_report=int(os.getenv("RATE_LIMIT_PUBLIC_REPORT", "3")),
+        rate_limit_image_analysis=int(os.getenv("RATE_LIMIT_IMAGE_ANALYSIS", "10")),
+        max_image_pixels=int(os.getenv("MAX_IMAGE_PIXELS", "25000000")),
+        job_lease_seconds=int(os.getenv("JOB_LEASE_SECONDS", "300")),
+        retention_days=int(os.getenv("RETENTION_DAYS", "180")),
+        backup_s3_bucket=os.getenv("BACKUP_S3_BUCKET"),
+        backup_s3_prefix=os.getenv("BACKUP_S3_PREFIX", "campus-evidences"),
         cors_origins=cors_origins,
         local_storage_path=local_storage_path,
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),
@@ -90,6 +132,7 @@ def get_settings() -> Settings:
         dashboard_base_url=os.getenv(
             "DASHBOARD_BASE_URL", "http://localhost:3000/dashboard"
         ),
+        frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000"),
         worker_poll_seconds=float(os.getenv("WORKER_POLL_SECONDS", "2.0")),
         classification_retry_delay_seconds=int(
             os.getenv("CLASSIFICATION_RETRY_DELAY_SECONDS", "120")

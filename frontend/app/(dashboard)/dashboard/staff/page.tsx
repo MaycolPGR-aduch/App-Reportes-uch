@@ -7,15 +7,11 @@ import {
   ApiHttpError,
   AssignmentStatus,
   StaffOwnAssignmentItem,
-  UserRole,
   completeMyStaffAssignment,
+  getCurrentUser,
   listMyStaffAssignments,
+  logout,
 } from "@/lib/api-client";
-import { IncidentsWorkspace } from "@/components/incidents-workspace";
-
-const TOKEN_KEY = "campus_access_token";
-const ROLE_KEY = "campus_user_role";
-const CAMPUS_ID_KEY = "campus_user_id";
 
 type AssignmentFilter = "ALL" | AssignmentStatus;
 
@@ -33,33 +29,20 @@ export default function StaffDashboardPage() {
   const [completingAssignmentId, setCompletingAssignmentId] = useState<string | null>(null);
 
   const clearSession = () => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.localStorage.removeItem(ROLE_KEY);
-    window.localStorage.removeItem(CAMPUS_ID_KEY);
+    void logout().catch(() => undefined);
     setToken(null);
     setCampusId(null);
   };
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(TOKEN_KEY);
-    const storedRole = window.localStorage.getItem(ROLE_KEY) as UserRole | null;
-    const storedCampusId = window.localStorage.getItem(CAMPUS_ID_KEY);
-
-    if (!storedToken || !storedRole) {
-      router.replace("/dashboard");
-      return;
-    }
-    if (storedRole === "ADMIN") {
-      router.replace("/dashboard/admin");
-      return;
-    }
-    if (storedRole !== "STAFF") {
-      router.replace("/dashboard");
-      return;
-    }
-
-    setToken(storedToken);
-    setCampusId(storedCampusId);
+    getCurrentUser()
+      .then((user) => {
+        if (user.role === "ADMIN") return router.replace("/dashboard/admin");
+        if (user.role !== "STAFF") return router.replace("/dashboard");
+        setToken("cookie-session");
+        setCampusId(user.campus_id);
+      })
+      .catch(() => router.replace("/dashboard"));
   }, [router]);
 
   const fetchAssignments = useCallback(async () => {
@@ -258,10 +241,6 @@ export default function StaffDashboardPage() {
         )}
       </section>
 
-      <section className="grid gap-3">
-        <h2 className="text-lg font-semibold text-slate-800">Incidencias generales</h2>
-        <IncidentsWorkspace token={token} />
-      </section>
     </main>
   );
 }

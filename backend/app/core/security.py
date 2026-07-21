@@ -1,47 +1,37 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
-import json
 import os
-import time
-from typing import Any
-from uuid import UUID
+import secrets
 
 from app.core.config import get_settings
-
-
-def _base64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
-
-
-def _base64url_decode(data: str) -> bytes:
-    padding = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode(data + padding)
-
-
-def _sign(message: bytes, secret: str) -> str:
-    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
-    return _base64url_encode(digest)
+from cryptography.exceptions import InvalidKey
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 
 
 def hash_password(password: str) -> str:
     if not password or len(password) < 8:
         raise ValueError("Password must be at least 8 characters long")
 
-    iterations = 100_000
-    salt = os.urandom(16).hex()
-    digest = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt.encode("utf-8"),
-        iterations,
-    ).hex()
-    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+    salt = os.urandom(16)
+    kdf = Argon2id(
+        salt=salt,
+        length=32,
+        iterations=3,
+        lanes=4,
+        memory_cost=64 * 1024,
+    )
+    return kdf.derive_phc_encoded(password.encode("utf-8"))
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
+    if stored_hash.startswith("$argon2id$"):
+        try:
+            Argon2id.verify_phc_encoded(password.encode("utf-8"), stored_hash)
+            return True
+        except (InvalidKey, ValueError, TypeError):
+            return False
     try:
         algorithm, iter_raw, salt, expected_digest = stored_hash.split("$", 3)
         if algorithm != "pbkdf2_sha256":
@@ -57,55 +47,14 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return False
 
 
-def create_access_token(*, user_id: UUID, campus_id: str, role: str) -> str:
-    settings = get_settings()
-    now = int(time.time())
-    payload = {
-        "sub": str(user_id),
-        "campus_id": campus_id,
-        "role": role,
-        "iat": now,
-        "exp": now + settings.jwt_exp_minutes * 60,
-    }
-
-    header = {"alg": "HS256", "typ": "JWT"}
-    header_segment = _base64url_encode(
-        json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    )
-    payload_segment = _base64url_encode(
-        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    )
-    signature = _sign(
-        f"{header_segment}.{payload_segment}".encode("utf-8"), settings.jwt_secret
-    )
-    return f"{header_segment}.{payload_segment}.{signature}"
+def password_needs_rehash(stored_hash: str) -> bool:
+    """PBKDF2 records are transparently upgraded after a successful login."""
+    return not stored_hash.startswith("$argon2id$")
 
 
-def decode_access_token(token: str) -> dict[str, Any]:
-    settings = get_settings()
+def generate_opaque_token() -> str:
+    return secrets.token_urlsafe(48)
 
-    try:
-        header_segment, payload_segment, signature_segment = token.split(".")
-    except ValueError as exc:
-        raise ValueError("Malformed token") from exc
 
-    expected_signature = _sign(
-        f"{header_segment}.{payload_segment}".encode("utf-8"), settings.jwt_secret
-    )
-    if not hmac.compare_digest(signature_segment, expected_signature):
-        raise ValueError("Invalid token signature")
-
-    try:
-        header = json.loads(_base64url_decode(header_segment))
-        payload = json.loads(_base64url_decode(payload_segment))
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise ValueError("Invalid token encoding") from exc
-
-    if header.get("alg") != "HS256":
-        raise ValueError("Unsupported JWT algorithm")
-
-    if int(payload.get("exp", 0)) <= int(time.time()):
-        raise ValueError("Token expired")
-
-    return payload
-
+def hash_opaque_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

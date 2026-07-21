@@ -47,6 +47,7 @@ class NotificationChannel(str, enum.Enum):
 
 class NotificationStatus(str, enum.Enum):
     PENDING = "PENDING"
+    SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
 
@@ -61,4 +62,3 @@ class JobStatus(str, enum.Enum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
-

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Enum as SAEnum
-from sqlalchemy import String, UniqueConstraint
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,7 @@ from app.models.enums import IncidentCategory, PriorityLevel
 
 if TYPE_CHECKING:
     from app.models.assignment import IncidentAssignment
+    from app.models.user import User
 
 
 class Responsible(Base, TimestampMixin):
@@ -23,6 +24,9 @@ class Responsible(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     area_name: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -41,3 +45,4 @@ class Responsible(Base, TimestampMixin):
     assignments: Mapped[list["IncidentAssignment"]] = relationship(
         back_populates="responsible"
     )
+    user: Mapped["User | None"] = relationship()

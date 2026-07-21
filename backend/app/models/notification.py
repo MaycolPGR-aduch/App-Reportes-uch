@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum as SAEnum
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
+    __table_args__ = (UniqueConstraint("event_key", name="uq_notifications_event_key"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
@@ -32,6 +33,7 @@ class Notification(Base, TimestampMixin):
         nullable=False,
     )
     recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_key: Mapped[str | None] = mapped_column(String(255))
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
@@ -44,4 +46,3 @@ class Notification(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text)
 
     incident: Mapped["Incident"] = relationship(back_populates="notifications")
-

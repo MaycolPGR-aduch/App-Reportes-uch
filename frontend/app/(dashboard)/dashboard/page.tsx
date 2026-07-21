@@ -3,12 +3,8 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserRole, login } from "@/lib/api-client";
+import { UserRole, getCurrentUser, login, logout } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
-
-const TOKEN_KEY = "campus_access_token";
-const ROLE_KEY = "campus_user_role";
-const CAMPUS_ID_KEY = "campus_user_id";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -20,19 +16,17 @@ export default function DashboardPage() {
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(TOKEN_KEY);
-    const storedRole = window.localStorage.getItem(ROLE_KEY) as UserRole | null;
-    if (storedToken) setToken(storedToken);
-    if (storedRole) setRole(storedRole);
-    if (storedToken && storedRole === "STAFF") {
-      router.replace("/dashboard/staff");
-    }
+    getCurrentUser()
+      .then((user) => {
+        setToken("cookie-session");
+        setRole(user.role);
+        if (user.role === "STAFF") router.replace("/dashboard/staff");
+      })
+      .catch(() => undefined);
   }, [router]);
 
-  const handleLogout = () => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.localStorage.removeItem(ROLE_KEY);
-    window.localStorage.removeItem(CAMPUS_ID_KEY);
+  const handleLogout = async () => {
+    await logout().catch(() => undefined);
     setToken(null);
     setRole(null);
   };
@@ -43,10 +37,7 @@ export default function DashboardPage() {
     setAuthLoading(true);
     try {
       const response = await login(campusId.trim(), password);
-      window.localStorage.setItem(TOKEN_KEY, response.access_token);
-      window.localStorage.setItem(ROLE_KEY, response.role);
-      window.localStorage.setItem(CAMPUS_ID_KEY, response.campus_id);
-      setToken(response.access_token);
+      setToken("cookie-session");
       setRole(response.role);
       setPassword("");
       if (response.role === "STAFF") {

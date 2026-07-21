@@ -96,12 +96,19 @@ export type IncidentDetail = {
   }>;
 };
 
-export type LoginResponse = {
-  access_token: string;
-  token_type: "bearer";
-  expires_in_seconds: number;
+export type SessionResponse = {
+  message: string;
   role: UserRole;
   campus_id: string;
+};
+
+export type CurrentUser = {
+  id: string;
+  campus_id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
 };
 
 export type PublicRegisterPayload = {
@@ -301,11 +308,21 @@ async function parseError(response: Response): Promise<never> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  // All authenticated traffic uses the HttpOnly session cookie. Never send bearer
+  // credentials even if legacy callers still pass a token argument.
+  headers.delete("Authorization");
+  if (!["GET", "HEAD", "OPTIONS"].includes((init?.method ?? "GET").toUpperCase())) {
+    const csrf = document.cookie
+      .split("; ")
+      .find((item) => item.startsWith("campus_csrf="))
+      ?.split("=", 2)[1];
+    if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
+  }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-    },
+    credentials: "include",
+    headers,
   });
   if (!response.ok) {
     return parseError(response);
@@ -313,25 +330,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function login(campusId: string, password: string): Promise<LoginResponse> {
-  return request<LoginResponse>("/auth/login", {
+export async function login(campusId: string, password: string): Promise<SessionResponse> {
+  return request<SessionResponse>("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ campus_id: campusId, password }),
   });
 }
 
-export async function registerUser(payload: PublicRegisterPayload): Promise<LoginResponse> {
-  return request<LoginResponse>("/auth/register", {
+export async function registerUser(payload: PublicRegisterPayload): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function confirmPasswordReset(
+  token: string,
+  password: string,
+): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/password-reset/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+export async function getCurrentUser(): Promise<CurrentUser> {
+  return request<CurrentUser>("/auth/me");
+}
+
+export async function logout(): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/logout", { method: "POST" });
+}
+
 export async function createReport(
   token: string | null,
   formData: FormData,
+  turnstileToken?: string | null,
 ): Promise<{
   incident_id: string;
   status: IncidentStatus;
@@ -342,6 +387,7 @@ export async function createReport(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+  if (turnstileToken) headers["X-Turnstile-Token"] = turnstileToken;
 
   return request("/reports", {
     method: "POST",
@@ -353,11 +399,13 @@ export async function createReport(
 export async function analyzeReportImage(
   token: string | null,
   formData: FormData,
+  turnstileToken?: string | null,
 ): Promise<ReportImageAnalysis> {
   const headers: Record<string, string> = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+  if (turnstileToken) headers["X-Turnstile-Token"] = turnstileToken;
   return request<ReportImageAnalysis>("/reports/analyze-image", {
     method: "POST",
     headers,
@@ -409,9 +457,7 @@ export async function getEvidenceObjectUrl(
   const response = await fetch(
     `${API_BASE}/incidents/${incidentId}/evidences/${evidenceId}`,
     {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      credentials: "include",
     },
   );
   if (!response.ok) {

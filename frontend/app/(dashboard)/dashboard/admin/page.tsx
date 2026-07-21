@@ -19,6 +19,7 @@ import {
   banAdminUser,
   createCampusZone,
   createAdminUser,
+  getCurrentUser,
   getSystemStatus,
   listAdminUsers,
   listCampusZones,
@@ -26,6 +27,7 @@ import {
   listStaff,
   listStaffAssignments,
   login,
+  logout,
   unbanAdminUser,
   updateCampusZone,
   updateAdminUser,
@@ -33,10 +35,6 @@ import {
   updateIncidentStatusAdmin,
 } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
-
-const TOKEN_KEY = "campus_access_token";
-const ROLE_KEY = "campus_user_role";
-const CAMPUS_ID_KEY = "campus_user_id";
 
 type TabKey = "INCIDENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -143,25 +141,23 @@ export default function AdminDashboardPage() {
   const [editZoneGeojson, setEditZoneGeojson] = useState(DEFAULT_ZONE_GEOJSON);
 
   const clearSession = () => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.localStorage.removeItem(ROLE_KEY);
-    window.localStorage.removeItem(CAMPUS_ID_KEY);
+    void logout().catch(() => undefined);
     setToken(null);
     setRole(null);
   };
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(TOKEN_KEY);
-    const storedRole = window.localStorage.getItem(ROLE_KEY) as UserRole | null;
-    if (storedToken && storedRole === "ADMIN") {
-      setToken(storedToken);
-      setRole(storedRole);
-      return;
-    }
-    if (storedToken && storedRole && storedRole !== "ADMIN") {
-      clearSession();
-      setAuthError("Solo ADMIN puede acceder a este dashboard.");
-    }
+    getCurrentUser()
+      .then((user) => {
+        if (user.role === "ADMIN") {
+          setToken("cookie-session");
+          setRole(user.role);
+        } else {
+          clearSession();
+          setAuthError("Solo ADMIN puede acceder a este dashboard.");
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   const fetchSystem = useCallback(async () => {
@@ -342,10 +338,7 @@ export default function AdminDashboardPage() {
         setAuthError("Solo ADMIN puede acceder.");
         return;
       }
-      window.localStorage.setItem(TOKEN_KEY, res.access_token);
-      window.localStorage.setItem(ROLE_KEY, res.role);
-      window.localStorage.setItem(CAMPUS_ID_KEY, res.campus_id);
-      setToken(res.access_token);
+      setToken("cookie-session");
       setRole(res.role);
       setPassword("");
     } catch (e) {

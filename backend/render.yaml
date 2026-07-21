@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: campus-alertas-api
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Render Disks are attached to one service only. Keep the API and local-storage
+    # workers in this process group so all of them see the same private evidence tree.
+    startCommand: python -m app.workers.ai_worker & python -m app.workers.notification_worker & python -m app.workers.maintenance_worker & exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AUTO_CREATE_SCHEMA
+        value: "false"
+      - key: LOCAL_STORAGE_PATH
+        value: /var/data/evidences
+    disk:
+      name: campus-evidences
+      mountPath: /var/data
+      sizeGB: 10

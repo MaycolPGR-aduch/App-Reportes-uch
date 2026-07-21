@@ -33,6 +33,23 @@ Desde `backend/`:
 - Detener todos los procesos lanzados por el script:
   `.\stop-all.ps1`
 
+## Producción (Render)
+
+1. Configura las variables de `backend/.env.example` como secretos de Render; usa
+   `APP_ENV=production`, un `JWT_SECRET` aleatorio, `COOKIE_SECURE=true`, orígenes
+   CORS explícitos, Turnstile y un Disk montado en `/var/data`.
+2. Para una base existente, aplica las migraciones manuales anteriores y ejecuta:
+   `alembic -c alembic.ini stamp 20260318_01` seguido de
+   `alembic -c alembic.ini upgrade head`.
+   En una base nueva basta `alembic -c alembic.ini upgrade head`.
+3. Despliega el servicio definido en `render.yaml`; con Render Disk, la API y los
+   workers se ejecutan en el mismo grupo para compartir las evidencias privadas.
+   Render debe comprobar `/health/ready` antes de enrutar tráfico. Si se requiere
+   escalamiento horizontal, migra `LocalStorageProvider` a almacenamiento S3 primero.
+
+Las sesiones son cookies HttpOnly, no tokens Bearer. El frontend debe configurar
+`NEXT_PUBLIC_API_BASE_URL` y enviar solicitudes con credenciales incluidas.
+
 ## Configuracion IA (Gemini)
 
 - Proveedor IA MVP: Gemini Developer API.
@@ -74,9 +91,14 @@ Para validar pipeline IA (DB + jobs + métricas + configuración Gemini):
 - `POST /api/v1/auth/register` (registro publico, crea cuenta STUDENT)
 - `POST /api/v1/auth/users` (ADMIN)
 - `GET /api/v1/auth/users` (ADMIN)
-- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/login` (crea cookie de sesión)
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/verify-email`
+- `POST /api/v1/auth/password-reset`
 - `POST /api/v1/reports` (acepta modo anonimo sin token o modo autenticado con Bearer)
-- `GET /api/v1/incidents`
+- `GET /api/v1/incidents` (ADMIN)
+- `GET /api/v1/incidents/mine` (STUDENT)
 - `GET /api/v1/incidents/{incident_id}`
 - `GET /api/v1/incidents/{incident_id}/evidences/{evidence_id}` (descarga evidencia bajo demanda, requiere auth)
 - `GET /api/v1/admin/staff` (ADMIN)
@@ -102,7 +124,7 @@ Si ejecutaste `sql/seed_test_users.sql`, puedes iniciar sesion con:
 
 Para crear usuarios via API (solo ADMIN):
 
-`POST /api/v1/auth/users` con `Authorization: Bearer <token_admin>`.
+`POST /api/v1/auth/users` usando la cookie de sesión ADMIN y el encabezado CSRF.
 
 ## Troubleshooting CORS
 

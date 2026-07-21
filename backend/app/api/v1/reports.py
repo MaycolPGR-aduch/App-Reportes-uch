@@ -5,14 +5,13 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.api.deps import get_current_user, get_optional_user
+from app.api.deps import get_current_admin, get_current_user, get_optional_user
 from app.core.config import get_settings
-from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.enums import (
     IncidentCategory,
@@ -43,36 +42,14 @@ from app.services.ai import classify_incident
 from app.services.jobs import enqueue_job
 from app.services.location_resolver import resolve_campus_zone
 from app.services.sanitizer import sanitize_description, sanitize_title
+from app.services.captcha import verify_turnstile
+from app.services.images import InvalidImageError, normalize_image
+from app.services.rate_limit import client_identifier, enforce_rate_limit
 from app.services.storage import LocalStorageProvider
 
 router = APIRouter(tags=["reports"])
 
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-
-ANONYMOUS_CAMPUS_ID = "__anonymous__"
-ANONYMOUS_EMAIL = "anonymous@campus.local"
-ANONYMOUS_NAME = "Reporte Anonimo"
-
-
-def _get_or_create_anonymous_user(db: Session) -> User:
-    anonymous = db.query(User).filter(User.campus_id == ANONYMOUS_CAMPUS_ID).first()
-    if anonymous:
-        return anonymous
-
-    anonymous = User(
-        campus_id=ANONYMOUS_CAMPUS_ID,
-        full_name=ANONYMOUS_NAME,
-        email=ANONYMOUS_EMAIL,
-        password_hash=hash_password("AnonymousReporter#2026"),
-        role=UserRole.STUDENT,
-        status=UserStatus.ACTIVE,
-    )
-    db.add(anonymous)
-    db.flush()
-    return anonymous
-
-
-def _build_incident_detail(incident: Incident) -> IncidentDetail:
+def _build_incident_detail(incident: Incident, *, include_sensitive: bool) -> IncidentDetail:
     location = (
         LocationOut(
             latitude=incident.location.latitude,
@@ -112,7 +89,7 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
             confidence=m.confidence,
             latency_ms=m.latency_ms,
             reasoning_summary=m.reasoning_summary,
-            raw_response=m.raw_response,
+            raw_response=m.raw_response if include_sensitive else None,
             created_at=m.created_at,
         )
         for m in sorted(incident.ai_metrics, key=lambda x: x.created_at, reverse=True)
@@ -156,13 +133,13 @@ def _build_incident_detail(incident: Incident) -> IncidentDetail:
         trace_id=incident.trace_id,
         created_at=incident.created_at,
         updated_at=incident.updated_at,
-        reporter_campus_id=incident.reporter.campus_id,
-        reporter_name=incident.reporter.full_name,
+        reporter_campus_id=incident.reporter.campus_id if include_sensitive and incident.reporter else "Protegido",
+        reporter_name=incident.reporter.full_name if include_sensitive and incident.reporter else "Reporte protegido",
         location=location,
         evidences=evidences,
-        ai_metrics=ai_metrics,
+        ai_metrics=ai_metrics if include_sensitive else [],
         assignments=assignments,
-        notifications=notifications,
+        notifications=notifications if include_sensitive else [],
     )
 
 
@@ -177,10 +154,22 @@ async def create_report(
     accuracy_m: Annotated[float | None, Form()] = None,
     location_reference: Annotated[str | None, Form()] = None,
     trace_id: str | None = Header(default=None, alias="X-Trace-Id"),
+    turnstile_token: str | None = Header(default=None, alias="X-Turnstile-Token"),
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> ReportCreateResponse:
     settings = get_settings()
+
+    if current_user is None:
+        enforce_rate_limit(
+            db,
+            scope="public_report",
+            identifier=client_identifier(request),
+            limit=settings.rate_limit_public_report,
+            window_seconds=3600,
+        )
+        verify_turnstile(turnstile_token, request)
 
     sanitized_title = sanitize_title(title or "")
     sanitized_description = sanitize_description(description)
@@ -198,12 +187,6 @@ async def create_report(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if photo.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported image type. Allowed: {sorted(ALLOWED_IMAGE_TYPES)}",
-        )
-
     file_bytes = await photo.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Photo file is empty")
@@ -215,25 +198,33 @@ async def create_report(
             detail=f"Photo exceeds {settings.max_image_size_mb}MB limit",
         )
 
+    try:
+        normalized_bytes, normalized_mime = normalize_image(
+            file_bytes,
+            declared_mime=photo.content_type,
+            max_pixels=settings.max_image_pixels,
+        )
+    except InvalidImageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     storage = LocalStorageProvider(settings.local_storage_path)
+    stored = None
     try:
         stored = storage.save_incident_image(
-            content=file_bytes,
-            mime_type=photo.content_type,
+            content=normalized_bytes,
+            mime_type=normalized_mime,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    reporter = current_user or _get_or_create_anonymous_user(db)
-
     incident = Incident(
-        reporter_id=reporter.id,
+        reporter_id=current_user.id if current_user else None,
         description=sanitized_description,
         category=category,
         status=IncidentStatus.REPORTED,
         priority=PriorityLevel.MEDIUM,
         trace_id=(trace_id or "")[:64] or None,
-        created_by=reporter.campus_id,
+        created_by=current_user.campus_id if current_user else "anonymous",
     )
     db.add(incident)
     db.flush()
@@ -279,7 +270,13 @@ async def create_report(
         payload={"source": "report_created"},
     )
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        if stored:
+            storage.delete(stored.relative_path)
+        raise
     db.refresh(incident)
     return ReportCreateResponse(
         incident_id=incident.id,
@@ -298,13 +295,21 @@ async def analyze_report_image(
     photo: UploadFile = File(...),
     description: Annotated[str | None, Form()] = None,
     category: Annotated[IncidentCategory, Form()] = IncidentCategory.INFRASTRUCTURE,
+    request: Request = None,
+    turnstile_token: str | None = Header(default=None, alias="X-Turnstile-Token"),
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ) -> ReportImageAnalysisResponse:
     settings = get_settings()
-    if photo.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported image type. Allowed: {sorted(ALLOWED_IMAGE_TYPES)}",
+    if current_user is None:
+        enforce_rate_limit(
+            db,
+            scope="image_analysis",
+            identifier=client_identifier(request),
+            limit=settings.rate_limit_image_analysis,
+            window_seconds=3600,
         )
+        verify_turnstile(turnstile_token, request)
 
     file_bytes = await photo.read()
     if not file_bytes:
@@ -317,6 +322,15 @@ async def analyze_report_image(
             detail=f"Photo exceeds {settings.max_image_size_mb}MB limit",
         )
 
+    try:
+        file_bytes, normalized_mime = normalize_image(
+            file_bytes,
+            declared_mime=photo.content_type,
+            max_pixels=settings.max_image_pixels,
+        )
+    except InvalidImageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     text = sanitize_description(description or "")
     result = classify_incident(
         description=text or "Sin descripcion",
@@ -326,7 +340,7 @@ async def analyze_report_image(
             "file_name": photo.filename,
         },
         image_bytes=file_bytes,
-        image_mime_type=photo.content_type,
+        image_mime_type=normalized_mime,
     )
 
     source = "heuristic"
@@ -357,7 +371,7 @@ def list_incidents(
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(get_current_admin),
 ) -> IncidentListResponse:
     safe_limit = min(max(limit, 1), 100)
     safe_offset = max(offset, 0)
@@ -374,7 +388,7 @@ def list_incidents(
     if date_to:
         filters.append(Incident.created_at <= date_to)
 
-    base_query = db.query(Incident).join(User, Incident.reporter_id == User.id)
+    base_query = db.query(Incident).outerjoin(User, Incident.reporter_id == User.id)
     if filters:
         base_query = base_query.filter(and_(*filters))
 
@@ -396,7 +410,7 @@ def list_incidents(
             priority=inc.priority,
             description=inc.description,
             created_at=inc.created_at,
-            reporter_campus_id=inc.reporter.campus_id,
+            reporter_campus_id=inc.reporter.campus_id if inc.reporter else "ANONYMOUS",
             location_zone_name=inc.location.resolved_zone_name if inc.location else None,
             location_status=inc.location.location_status if inc.location else None,
         )
@@ -405,28 +419,73 @@ def list_incidents(
     return IncidentListResponse(total=total, items=items)
 
 
+@router.get("/incidents/mine", response_model=IncidentListResponse)
+def list_my_incidents(
+    limit: int = 20,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> IncidentListResponse:
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Student role required")
+    safe_limit = min(max(limit, 1), 100)
+    query = db.query(Incident).filter(Incident.reporter_id == current_user.id)
+    total = query.with_entities(func.count(Incident.id)).scalar() or 0
+    incidents = query.options(selectinload(Incident.location)).order_by(Incident.created_at.desc()).offset(max(offset, 0)).limit(safe_limit).all()
+    return IncidentListResponse(
+        total=total,
+        items=[
+            IncidentListItem(
+                id=inc.id, category=inc.category, status=inc.status, priority=inc.priority,
+                description=inc.description, created_at=inc.created_at,
+                reporter_campus_id=current_user.campus_id,
+                location_zone_name=inc.location.resolved_zone_name if inc.location else None,
+                location_status=inc.location.location_status if inc.location else None,
+            ) for inc in incidents
+        ],
+    )
+
+
+def _can_access_incident(db: Session, incident: Incident, user: User) -> bool:
+    if user.role == UserRole.ADMIN:
+        return True
+    if user.role == UserRole.STUDENT:
+        return incident.reporter_id == user.id
+    if user.role == UserRole.STAFF:
+        return (
+            db.query(IncidentAssignment.id)
+            .join(IncidentAssignment.responsible)
+            .filter(IncidentAssignment.incident_id == incident.id, IncidentAssignment.responsible.has(user_id=user.id))
+            .first()
+            is not None
+        )
+    return False
+
+
 @router.get("/incidents/{incident_id}", response_model=IncidentDetail)
 def get_incident_detail(
     incident_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> IncidentDetail:
     incident = (
         db.query(Incident)
         .options(
             joinedload(Incident.reporter),
-            joinedload(Incident.location),
-            joinedload(Incident.evidences),
-            joinedload(Incident.ai_metrics),
-            joinedload(Incident.assignments).joinedload(IncidentAssignment.responsible),
-            joinedload(Incident.notifications),
+            selectinload(Incident.location),
+            selectinload(Incident.evidences),
+            selectinload(Incident.ai_metrics),
+            selectinload(Incident.assignments).joinedload(IncidentAssignment.responsible),
+            selectinload(Incident.notifications),
         )
         .filter(Incident.id == incident_id)
         .first()
     )
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return _build_incident_detail(incident)
+    if not _can_access_incident(db, incident, current_user):
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return _build_incident_detail(incident, include_sensitive=current_user.role == UserRole.ADMIN)
 
 
 @router.get("/incidents/{incident_id}/evidences/{evidence_id}")
@@ -434,7 +493,7 @@ def get_incident_evidence_file(
     incident_id: UUID,
     evidence_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
     evidence = (
         db.query(IncidentEvidence)
@@ -445,6 +504,10 @@ def get_incident_evidence_file(
         .first()
     )
     if evidence is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    incident = db.get(Incident, incident_id)
+    if incident is None or not _can_access_incident(db, incident, current_user):
         raise HTTPException(status_code=404, detail="Evidence not found")
 
     settings = get_settings()

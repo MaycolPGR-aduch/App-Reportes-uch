@@ -160,11 +160,13 @@ def register_notification(
     incident: Incident,
     recipient: str,
     send_result: EmailSendResult,
+    event_key: str | None = None,
 ) -> Notification:
     notification = Notification(
         incident_id=incident.id,
         channel=NotificationChannel.EMAIL,
         recipient=recipient,
+        event_key=event_key,
         subject=f"[{incident.priority.value}] Incidencia {incident.category.value}",
         payload={"incident_id": str(incident.id), "recipient": recipient},
         provider_message_id=send_result.provider_message_id,

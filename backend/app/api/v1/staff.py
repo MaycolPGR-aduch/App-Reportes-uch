@@ -25,10 +25,9 @@ router = APIRouter(prefix="/staff", tags=["staff"])
 
 
 def _get_staff_responsibles(db: Session, current_staff: User) -> list[Responsible]:
-    staff_email = current_staff.email.strip().lower()
     return (
         db.query(Responsible)
-        .filter(func.lower(Responsible.email) == staff_email)
+        .filter(Responsible.user_id == current_staff.id)
         .order_by(Responsible.area_name.asc(), Responsible.created_at.asc())
         .all()
     )
@@ -111,8 +110,7 @@ def complete_my_assignment(
     if assignment.responsible is None:
         raise HTTPException(status_code=400, detail="Asignación inválida sin staff vinculado")
 
-    responsible_email = assignment.responsible.email.strip().lower()
-    if responsible_email != current_staff.email.strip().lower():
+    if assignment.responsible.user_id != current_staff.id:
         raise HTTPException(
             status_code=403,
             detail="No puedes completar una asignación que pertenece a otro staff.",

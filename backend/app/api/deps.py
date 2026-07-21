@@ -2,33 +2,36 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from datetime import datetime, timezone
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_access_token
+from app.core.config import get_settings
+from app.core.security import hash_opaque_token
 from app.db.session import get_db
 from app.models.enums import UserRole, UserStatus
+from app.models.auth_session import AuthSession
 from app.models.user import User
 
-bearer_scheme = HTTPBearer(auto_error=True)
-optional_bearer_scheme = HTTPBearer(auto_error=False)
-
-
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
     db: Session = Depends(get_db),
 ) -> User:
-    try:
-        payload = decode_access_token(credentials.credentials)
-        user_id = UUID(payload["sub"])
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        ) from exc
-
-    user = db.get(User, user_id)
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    session = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.token_hash == hash_opaque_token(token),
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    user = db.get(User, session.user_id) if session else None
     if user is None or user.status != UserStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -56,22 +59,22 @@ def get_current_staff(current_user: User = Depends(get_current_user)) -> User:
 
 
 def get_optional_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
+    request: Request,
     db: Session = Depends(get_db),
 ) -> User | None:
-    if credentials is None:
+    session_token = request.cookies.get(get_settings().session_cookie_name)
+    if session_token is None:
         return None
-
-    try:
-        payload = decode_access_token(credentials.credentials)
-        user_id = UUID(payload["sub"])
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        ) from exc
-
-    user = db.get(User, user_id)
+    session = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.token_hash == hash_opaque_token(session_token),
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    user = db.get(User, session.user_id) if session else None
     if user is None or user.status != UserStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

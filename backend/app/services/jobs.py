@@ -65,6 +65,24 @@ def claim_next_job(db: Session, *, job_type: JobType, worker_id: str) -> Job | N
     return db.get(Job, row["id"])
 
 
+def recover_expired_leases(db: Session, *, lease_seconds: int) -> int:
+    """Make work recoverable after a worker dies after committing its claim."""
+    result = db.execute(
+        text(
+            """
+            UPDATE jobs
+            SET status = 'PENDING', locked_at = NULL, locked_by = NULL,
+                run_after = now(), updated_at = now(),
+                last_error = COALESCE(last_error, 'Worker lease expired')
+            WHERE status = 'PROCESSING'
+              AND locked_at < now() - (:lease_seconds * interval '1 second')
+            """
+        ),
+        {"lease_seconds": lease_seconds},
+    )
+    return result.rowcount or 0
+
+
 def complete_job(db: Session, job: Job) -> None:
     job.status = JobStatus.COMPLETED
     job.locked_at = None
@@ -90,4 +108,3 @@ def fail_job(
         )
     else:
         job.status = JobStatus.FAILED
-

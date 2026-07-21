@@ -27,12 +27,26 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in_seconds: int
+class SessionResponse(BaseModel):
+    message: str = "Authenticated"
     role: UserRole
     campus_id: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=6, max_length=255)
+
+
+class PasswordResetConfirmRequest(VerifyEmailRequest):
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserResponse(BaseModel):

@@ -36,8 +36,8 @@ class Incident(Base, TimestampMixin):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    reporter_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    reporter_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[IncidentCategory] = mapped_column(
@@ -56,7 +56,7 @@ class Incident(Base, TimestampMixin):
     trace_id: Mapped[str | None] = mapped_column(String(64), index=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    reporter: Mapped["User"] = relationship(back_populates="incidents")
+    reporter: Mapped["User | None"] = relationship(back_populates="incidents")
     location: Mapped["IncidentLocation"] = relationship(
         back_populates="incident", uselist=False, cascade="all, delete-orphan"
     )
@@ -75,4 +75,3 @@ class Incident(Base, TimestampMixin):
     jobs: Mapped[list["Job"]] = relationship(
         back_populates="incident", cascade="all, delete-orphan"
     )
-
