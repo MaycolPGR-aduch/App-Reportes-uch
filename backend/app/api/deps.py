@@ -74,8 +74,15 @@ def get_optional_user(
         )
         .first()
     )
-    user = db.get(User, session.user_id) if session else None
+    if session is None:
+        # A stale cookie (expired or revoked) must not block the anonymous flow.
+        # The request continues unauthenticated, so rate limiting and Turnstile
+        # still apply to it.
+        return None
+    user = db.get(User, session.user_id)
     if user is None or user.status != UserStatus.ACTIVE:
+        # A valid session pointing at a banned user is a deliberate signal and
+        # must not be silently downgraded to anonymous.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Inactive or unknown user",

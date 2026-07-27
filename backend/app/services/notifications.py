@@ -84,6 +84,10 @@ def _compose_html(incident: Incident) -> str:
             "</p>"
         )
 
+    # Anonymous reports carry no reporter row; mirror the label used by the
+    # protected incident serializer instead of dereferencing a null relation.
+    reporter_label = incident.reporter.campus_id if incident.reporter else "Anonimo"
+
     return (
         "<h2>Nueva incidencia en campus</h2>"
         f"<p><strong>ID:</strong> {incident.id}</p>"
@@ -92,7 +96,7 @@ def _compose_html(incident: Incident) -> str:
         f"<p><strong>Estado:</strong> {incident.status.value}</p>"
         f"{location_html}"
         f"<p><strong>Descripcion:</strong> {incident.description}</p>"
-        f"<p><strong>Reportante:</strong> {incident.reporter.campus_id}</p>"
+        f"<p><strong>Reportante:</strong> {reporter_label}</p>"
         f"<p><a href='{detail_url}'>Abrir en dashboard</a></p>"
     )
 
