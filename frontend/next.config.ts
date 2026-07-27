@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
 
+const scriptSource =
+  process.env.NODE_ENV === "development"
+    ? "'self' 'unsafe-inline' 'unsafe-eval'"
+    : "'self' 'unsafe-inline'";
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+let apiOrigin = "http://localhost:8000";
+try {
+  apiOrigin = new URL(apiBaseUrl).origin;
+} catch {
+  // Keep the development default if an invalid API URL is configured.
+}
+const connectSource =
+  process.env.NODE_ENV === "development" ? `'self' ${apiOrigin}` : "'self' https:";
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
@@ -30,7 +44,7 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(self), geolocation=(self)" },
           {
             key: "Content-Security-Policy",
-            value: "default-src 'self'; img-src 'self' blob: data:; connect-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'",
+            value: `default-src 'self'; img-src 'self' blob: data:; connect-src ${connectSource}; script-src ${scriptSource}; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'`,
           },
         ],
       },
