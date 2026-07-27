@@ -180,8 +180,8 @@ export function ReportForm() {
         formData.append("description", description.trim());
       }
 
-      const authToken = mode === "AUTHENTICATED" ? token : null;
-      const result = await analyzeReportImage(authToken, formData, turnstileToken);
+      // The backend derives the mode from the session cookie, not from a header.
+      const result = await analyzeReportImage(formData, turnstileToken);
       setAnalysis(result);
 
       if (result.suggested_title) {
@@ -255,8 +255,8 @@ export function ReportForm() {
     setSubmitError(null);
     setSubmitSuccess(null);
     try {
-      const authToken = mode === "AUTHENTICATED" ? token : null;
-      const response = await createReport(authToken, formData, turnstileToken);
+      // The backend derives the mode from the session cookie, not from a header.
+      const response = await createReport(formData, turnstileToken);
       const prefix = mode === "ANONYMOUS" ? "Reporte anonimo enviado" : "Incidencia enviada";
       setSubmitSuccess(
         `${prefix} (${response.incident_id.slice(0, 8)}). Estado IA: ${response.ai_status}`,

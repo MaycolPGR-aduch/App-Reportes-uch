@@ -50,7 +50,7 @@ export default function StaffDashboardPage() {
     setAssignmentsLoading(true);
     setAssignmentsError(null);
     try {
-      const response = await listMyStaffAssignments(token, {
+      const response = await listMyStaffAssignments({
         status_filter: filter === "ALL" ? undefined : filter,
         limit: 200,
         offset: 0,
@@ -82,7 +82,7 @@ export default function StaffDashboardPage() {
     setAssignmentsError(null);
     setActionMessage(null);
     try {
-      const response = await completeMyStaffAssignment(token, assignmentId);
+      const response = await completeMyStaffAssignment(assignmentId);
       setActionMessage(response.message);
       await fetchAssignments();
     } catch (error) {

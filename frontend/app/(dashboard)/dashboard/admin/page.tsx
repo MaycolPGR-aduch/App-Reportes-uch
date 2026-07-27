@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
     setSystemLoading(true);
     setSystemError(null);
     try {
-      setSystem(await getSystemStatus(token));
+      setSystem(await getSystemStatus());
     } catch (e) {
       setSystemError(e instanceof Error ? e.message : "No se pudo cargar estado del sistema");
     } finally {
@@ -179,7 +179,7 @@ export default function AdminDashboardPage() {
       setUsersLoading(true);
       setUsersError(null);
       try {
-        const data = await listAdminUsers(token, {
+        const data = await listAdminUsers({
           search: (searchValue ?? "").trim() || undefined,
           limit: 200,
           offset: 0,
@@ -200,7 +200,7 @@ export default function AdminDashboardPage() {
     setStaffLoading(true);
     setStaffError(null);
     try {
-      const data = await listStaff(token, {
+      const data = await listStaff({
         search: staffSearch.trim() || undefined,
         category: staffCategoryFilter || undefined,
         active:
@@ -228,7 +228,7 @@ export default function AdminDashboardPage() {
     try {
       const statusBlocks = await Promise.all(
         ["REPORTED", "IN_REVIEW", "IN_PROGRESS"].map((statusFilter) =>
-          listIncidents(token, {
+          listIncidents({
             status_filter: statusFilter as IncidentStatus,
             limit: 100,
             offset: 0,
@@ -258,7 +258,7 @@ export default function AdminDashboardPage() {
       setStaffAssignmentsLoading(true);
       setStaffError(null);
       try {
-        const data = await listStaffAssignments(token, staffId, { limit: 200, offset: 0 });
+        const data = await listStaffAssignments(staffId, { limit: 200, offset: 0 });
         setStaffAssignments(data.items);
       } catch (e) {
         setStaffError(e instanceof Error ? e.message : "No se pudo cargar asignaciones");
@@ -274,7 +274,7 @@ export default function AdminDashboardPage() {
     setZonesLoading(true);
     setZonesError(null);
     try {
-      const data = await listCampusZones(token, {
+      const data = await listCampusZones({
         search: zoneSearch.trim() || undefined,
         active:
           zoneActiveFilter === "ALL" ? undefined : zoneActiveFilter === "ACTIVE" ? true : false,
@@ -382,7 +382,7 @@ export default function AdminDashboardPage() {
             }
           : {}),
       };
-      await updateAdminUser(token, selectedUser.id, {
+      await updateAdminUser(selectedUser.id, {
         ...payload,
       });
       await Promise.all([fetchUsers(search), fetchStaff()]);
@@ -394,8 +394,8 @@ export default function AdminDashboardPage() {
   const toggleBan = async (user: AdminUser) => {
     if (!token) return;
     try {
-      if (user.status === "ACTIVE") await banAdminUser(token, user.id);
-      else await unbanAdminUser(token, user.id);
+      if (user.status === "ACTIVE") await banAdminUser(user.id);
+      else await unbanAdminUser(user.id);
       await fetchUsers(search);
     } catch (e) {
       setUsersError(e instanceof Error ? e.message : "No se pudo cambiar estado del usuario");
@@ -422,7 +422,7 @@ export default function AdminDashboardPage() {
             }
           : {}),
       };
-      await createAdminUser(token, {
+      await createAdminUser({
         ...payload,
       });
       setNewCampusId("");
@@ -455,7 +455,7 @@ export default function AdminDashboardPage() {
     setAssignLoading(true);
     setStaffError(null);
     try {
-      const response = await assignIncidentToStaff(token, assignIncidentId, {
+      const response = await assignIncidentToStaff(assignIncidentId, {
         responsible_id: assignStaffId,
         notes: assignNotes.trim() || undefined,
         notify: assignNotify,
@@ -481,7 +481,7 @@ export default function AdminDashboardPage() {
     setAssignmentStatusLoadingId(assignmentId);
     setStaffError(null);
     try {
-      const response = await updateAssignmentStatus(token, assignmentId, {
+      const response = await updateAssignmentStatus(assignmentId, {
         status: statusValue,
       });
       setStaffActionMessage(response.message);
@@ -501,7 +501,7 @@ export default function AdminDashboardPage() {
     setIncidentStatusLoading(true);
     setStaffError(null);
     try {
-      const response = await updateIncidentStatusAdmin(token, assignIncidentId, {
+      const response = await updateIncidentStatusAdmin(assignIncidentId, {
         status: manualIncidentStatus,
       });
       setStaffActionMessage(response.message);
@@ -537,7 +537,7 @@ export default function AdminDashboardPage() {
     setZonesError(null);
     try {
       const polygonGeojson = parseZoneGeojson(newZoneGeojson);
-      await createCampusZone(token, {
+      await createCampusZone({
         name: newZoneName.trim(),
         code: newZoneCode.trim() || null,
         priority: Number(newZonePriority),
@@ -561,7 +561,7 @@ export default function AdminDashboardPage() {
     setZonesError(null);
     try {
       const polygonGeojson = parseZoneGeojson(editZoneGeojson);
-      await updateCampusZone(token, selectedZone.id, {
+      await updateCampusZone(selectedZone.id, {
         name: editZoneName.trim(),
         code: editZoneCode.trim() || null,
         priority: Number(editZonePriority),
