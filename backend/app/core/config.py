@@ -47,8 +47,6 @@ class Settings:
     brevo_api_key: str | None
     brevo_from_email: str | None
     brevo_from_name: str
-    sendgrid_api_key: str | None
-    sendgrid_from_email: str | None
     default_alert_email: str | None
     dashboard_base_url: str
     frontend_base_url: str
@@ -126,8 +124,6 @@ def get_settings() -> Settings:
         brevo_api_key=os.getenv("BREVO_API_KEY"),
         brevo_from_email=os.getenv("BREVO_FROM_EMAIL"),
         brevo_from_name=os.getenv("BREVO_FROM_NAME", "Campus Alertas"),
-        sendgrid_api_key=os.getenv("SENDGRID_API_KEY"),
-        sendgrid_from_email=os.getenv("SENDGRID_FROM_EMAIL"),
         default_alert_email=os.getenv("DEFAULT_ALERT_EMAIL"),
         dashboard_base_url=os.getenv(
             "DASHBOARD_BASE_URL", "http://localhost:3000/dashboard"
