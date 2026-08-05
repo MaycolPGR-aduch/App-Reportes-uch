@@ -35,8 +35,9 @@ import {
   updateIncidentStatusAdmin,
 } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
+import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
 
-type TabKey = "INCIDENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
+type TabKey = "INCIDENTS" | "SOCIAL" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
 const ASSIGNMENT_STATUS_OPTIONS: AssignmentStatus[] = ["ASSIGNED", "ACKNOWLEDGED", "COMPLETED"];
@@ -642,6 +643,14 @@ export default function AdminDashboardPage() {
             Incidencias
           </button>
           <button
+            onClick={() => setTab("SOCIAL")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              tab === "SOCIAL" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+            }`}
+          >
+            Vista social
+          </button>
+          <button
             onClick={() => setTab("SYSTEM")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
               tab === "SYSTEM" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
@@ -690,6 +699,8 @@ export default function AdminDashboardPage() {
 
       {tab === "INCIDENTS" ? <IncidentsWorkspace token={token} /> : null}
 
+      {tab === "SOCIAL" ? <AdminIncidentsFeed /> : null}
+
       {tab === "SYSTEM" ? (
         <section className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
@@ -708,13 +719,13 @@ export default function AdminDashboardPage() {
                 API: <strong>{system.api_ok ? "OK" : "FAIL"}</strong>
               </p>
               <p>
-                Gemini: <strong>{system.gemini.state}</strong> ({system.gemini.model})
+                Router IA: <strong>{system.ai.state}</strong> ({system.ai.model})
               </p>
               <p>
-                Fallback 24h: <strong>{system.gemini.fallback_count_24h}</strong>
+                Fallback 24h: <strong>{system.ai.fallback_count_24h}</strong>
               </p>
               <p>
-                Quota 429: <strong>{system.gemini.quota_exhausted_detected ? "SI" : "NO"}</strong>
+                Quota 429: <strong>{system.ai.quota_exhausted_detected ? "SI" : "NO"}</strong>
               </p>
               <div className="grid gap-1">
                 {system.workers.map((w) => (
@@ -744,9 +755,9 @@ export default function AdminDashboardPage() {
                   ))}
                 </div>
               ) : null}
-              {system.gemini.latest_fallback_reason ? (
+              {system.ai.latest_fallback_reason ? (
                 <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-                  Ultimo fallback: {system.gemini.latest_fallback_reason}
+                  Último fallback: {system.ai.latest_fallback_reason}
                 </p>
               ) : null}
             </div>

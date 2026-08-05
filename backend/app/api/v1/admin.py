@@ -42,7 +42,7 @@ from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserOut,
     AssignmentActionResponse,
-    GeminiStatusOut,
+    AIProviderStatusOut,
     IncidentStatusUpdateResponse,
     JobQueueSummaryItem,
     ManualAssignIncidentRequest,
@@ -372,27 +372,27 @@ def get_system_status(
             source = raw.get("source")
             if latest_source is None and isinstance(source, str):
                 latest_source = source
-            fallback_reason = raw.get("fallback_reason")
-            if isinstance(fallback_reason, str) and fallback_reason.strip():
+            attempts = raw.get("attempts_before_success")
+            if isinstance(attempts, list) and attempts:
                 fallback_count_24h += 1
                 if latest_fallback_reason is None:
-                    latest_fallback_reason = fallback_reason[:500]
-                if "resource_exhausted" in fallback_reason.lower() or "429" in fallback_reason:
+                    latest_fallback_reason = str(attempts[0].get("error", "Unknown model failure"))[:500]
+                if any("429" in str(item.get("error", "")) for item in attempts if isinstance(item, dict)):
                     quota_exhausted_detected = True
 
-    gemini_state = "OK"
-    if not settings.gemini_api_key:
-        gemini_state = "MISSING_API_KEY"
+    ai_state = "OK"
+    if not settings.ai_tokenrouter_api_key or not settings.ai_image_primary_model:
+        ai_state = "MISSING_CONFIGURATION"
     elif fallback_count_24h > 0:
-        gemini_state = "FALLBACK_ACTIVE"
+        ai_state = "FALLBACK_ACTIVE"
 
     notes: list[str] = []
     if ai_worker.state == "STALE":
         notes.append("AI worker parece inactivo o atrasado.")
     if notification_worker.state == "STALE":
         notes.append("Notification worker parece inactivo o atrasado.")
-    if gemini_state == "FALLBACK_ACTIVE":
-        notes.append("Gemini está en fallback en al menos una ejecución reciente.")
+    if ai_state == "FALLBACK_ACTIVE":
+        notes.append("El router IA usó un modelo de respaldo en al menos una ejecución reciente.")
     if not settings.auto_assign_enabled:
         notes.append("Auto-asignación IA desactivada: asignación manual activa.")
 
@@ -401,10 +401,10 @@ def get_system_status(
         server_time=now,
         queue_summary=queue_summary,
         workers=[ai_worker, notification_worker],
-        gemini=GeminiStatusOut(
-            api_key_configured=bool(settings.gemini_api_key),
-            model=settings.gemini_model,
-            state=gemini_state,
+        ai=AIProviderStatusOut(
+            api_key_configured=bool(settings.ai_tokenrouter_api_key),
+            model=settings.ai_image_primary_model or "No configurado",
+            state=ai_state,
             fallback_count_24h=fallback_count_24h,
             quota_exhausted_detected=quota_exhausted_detected,
             latest_fallback_reason=latest_fallback_reason,

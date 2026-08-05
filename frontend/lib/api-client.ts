@@ -27,6 +27,46 @@ export type IncidentListResponse = {
   items: IncidentListItem[];
 };
 
+export type StudentFeedItem = {
+  id: string;
+  category: IncidentCategory;
+  status: IncidentStatus;
+  description: string;
+  created_at: string;
+  location_zone_name: string | null;
+  has_image: boolean;
+  community_consent: boolean;
+  is_community_visible: boolean;
+};
+
+export type CommunityFeedItem = {
+  id: string;
+  category: IncidentCategory;
+  status: IncidentStatus;
+  description: string;
+  created_at: string;
+  location_zone_name: string | null;
+  has_image: boolean;
+  reaction_count: number;
+  reacted_by_me: boolean;
+  is_own_report: boolean;
+};
+
+export type StudentFeedResponse = {
+  total: number;
+  items: StudentFeedItem[];
+};
+
+export type CommunityFeedResponse = {
+  total: number;
+  items: CommunityFeedItem[];
+};
+
+export type ReactionState = {
+  reaction_count: number;
+  reacted_by_me: boolean;
+};
+
 export type IncidentDetail = {
   id: string;
   category: IncidentCategory;
@@ -134,6 +174,16 @@ export type AdminUserListResponse = {
   items: AdminUser[];
 };
 
+export type AIProviderStatus = {
+  api_key_configured: boolean;
+  model: string;
+  state: string;
+  fallback_count_24h: number;
+  quota_exhausted_detected: boolean;
+  latest_fallback_reason: string | null;
+  latest_source: string | null;
+};
+
 export type SystemStatusResponse = {
   api_ok: boolean;
   server_time: string;
@@ -149,16 +199,14 @@ export type SystemStatusResponse = {
     pending_jobs: number;
     processing_jobs: number;
   }>;
-  gemini: {
-    api_key_configured: boolean;
-    model: string;
-    state: string;
-    fallback_count_24h: number;
-    quota_exhausted_detected: boolean;
-    latest_fallback_reason: string | null;
-    latest_source: string | null;
-  };
+  ai: AIProviderStatus;
   notes: string[];
+};
+
+type SystemStatusWireResponse = Omit<SystemStatusResponse, "ai"> & {
+  ai?: AIProviderStatus;
+  // Compatibility with a backend process that has not been restarted yet.
+  gemini?: AIProviderStatus;
 };
 
 export type StaffMember = {
@@ -267,19 +315,6 @@ export type IncidentLocationResolveResponse = {
   location_status: string;
   location_confidence: number | null;
   message: string;
-};
-
-export type ReportImageAnalysis = {
-  is_appropriate: boolean;
-  is_incident: boolean;
-  reason: string | null;
-  suggested_title: string | null;
-  predicted_category: IncidentCategory;
-  priority_label: PriorityLevel;
-  priority_score: string;
-  confidence: string;
-  assigned_to: string | null;
-  source: string;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -392,19 +427,6 @@ export async function createReport(
   });
 }
 
-export async function analyzeReportImage(
-  formData: FormData,
-  turnstileToken?: string | null,
-): Promise<ReportImageAnalysis> {
-  const headers: Record<string, string> = {};
-  if (turnstileToken) headers["X-Turnstile-Token"] = turnstileToken;
-  return request<ReportImageAnalysis>("/reports/analyze-image", {
-    method: "POST",
-    headers,
-    body: formData,
-  });
-}
-
 export async function listIncidents(
   params: {
     status_filter?: IncidentStatus;
@@ -426,6 +448,66 @@ export async function listIncidents(
   query.set("offset", String(params.offset ?? 0));
 
   return request<IncidentListResponse>(`/incidents?${query.toString()}`);
+}
+
+type FeedFilters = {
+  status_filter?: IncidentStatus;
+  category?: IncidentCategory;
+  limit?: number;
+  offset?: number;
+};
+
+function feedQuery(params: FeedFilters): string {
+  const query = new URLSearchParams();
+  if (params.status_filter) query.set("status_filter", params.status_filter);
+  if (params.category) query.set("category", params.category);
+  query.set("limit", String(params.limit ?? 12));
+  query.set("offset", String(params.offset ?? 0));
+  return query.toString();
+}
+
+export async function listMyIncidentFeed(params: FeedFilters = {}): Promise<StudentFeedResponse> {
+  return request<StudentFeedResponse>(`/incidents/mine/feed?${feedQuery(params)}`);
+}
+
+export async function listAdminIncidentFeed(params: FeedFilters = {}): Promise<StudentFeedResponse> {
+  return request<StudentFeedResponse>(`/incidents/admin/feed?${feedQuery(params)}`);
+}
+
+export async function listCommunityFeed(params: FeedFilters = {}): Promise<CommunityFeedResponse> {
+  return request<CommunityFeedResponse>(`/incidents/community?${feedQuery(params)}`);
+}
+
+async function getPrivateImageObjectUrl(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!response.ok) return parseError(response);
+  return URL.createObjectURL(await response.blob());
+}
+
+export async function getMyIncidentFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/mine/${incidentId}/image`);
+}
+
+export async function getAdminIncidentFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/admin/${incidentId}/image`);
+}
+
+export async function getCommunityFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/community/${incidentId}/image`);
+}
+
+export async function addCommunityReaction(incidentId: string): Promise<ReactionState> {
+  return request<ReactionState>(`/incidents/community/${incidentId}/reaction`, { method: "POST" });
+}
+
+export async function removeCommunityReaction(incidentId: string): Promise<ReactionState> {
+  return request<ReactionState>(`/incidents/community/${incidentId}/reaction`, { method: "DELETE" });
+}
+
+export async function revokeCommunityConsent(incidentId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/incidents/${incidentId}/community-consent`, {
+    method: "PATCH",
+  });
 }
 
 export async function getIncidentDetail(incidentId: string): Promise<IncidentDetail> {
@@ -450,7 +532,12 @@ export async function getEvidenceObjectUrl(
 }
 
 export async function getSystemStatus(): Promise<SystemStatusResponse> {
-  return request<SystemStatusResponse>("/admin/system-status");
+  const payload = await request<SystemStatusWireResponse>("/admin/system-status");
+  const ai = payload.ai ?? payload.gemini;
+  if (!ai) {
+    throw new Error("La API devolvió un estado IA incompleto; reinicia el backend.");
+  }
+  return { ...payload, ai };
 }
 
 export async function listAdminUsers(

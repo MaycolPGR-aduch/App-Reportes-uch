@@ -164,6 +164,302 @@ body {
   }
 }
 
+.student-feed-shell {
+  width: min(100%, 44rem);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.student-feed-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0.25rem 1.35rem;
+}
+
+.student-feed-kicker {
+  margin: 0 0 0.25rem;
+  color: #0f766e;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.student-feed-header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.7rem, 4vw, 2.25rem);
+  line-height: 1.05;
+}
+
+.student-feed-header p:not(.student-feed-kicker) {
+  max-width: 31rem;
+  margin: 0.5rem 0 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.student-feed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.student-report-cta,
+.student-logout,
+.student-feed-toolbar button,
+.student-load-more {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.68rem 0.9rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.student-report-cta {
+  background: linear-gradient(100deg, #047857, #0d9488);
+  color: white;
+  box-shadow: 0 12px 24px -16px rgba(4, 120, 87, 0.9);
+}
+
+.student-report-cta:hover { filter: brightness(1.05); }
+
+.student-logout {
+  border: 1px solid #b8dbd3;
+  background: rgba(255, 255, 255, 0.7);
+  color: #0f766e;
+}
+
+.student-feed-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  padding: 0.28rem;
+  border: 1px solid rgba(167, 243, 208, 0.8);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.student-feed-tabs button {
+  border: 0;
+  border-radius: 0.75rem;
+  padding: 0.7rem;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.student-feed-tabs button.is-active {
+  background: #fff;
+  color: #047857;
+  box-shadow: 0 5px 13px -10px rgba(15, 118, 110, 0.85);
+}
+
+.student-feed-toolbar {
+  display: flex;
+  gap: 0.55rem;
+  margin: 1rem 0;
+}
+
+.student-feed-toolbar select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #cde5de;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 0.62rem;
+  color: #334155;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.student-feed-toolbar button {
+  background: #e6f7f3;
+  color: #0f766e;
+}
+
+.student-feed-toolbar button:disabled,
+.student-load-more:disabled,
+.feed-reaction:disabled,
+.feed-text-action:disabled { cursor: wait; opacity: 0.65; }
+
+.student-feed-list { display: grid; gap: 1rem; }
+
+.feed-card {
+  overflow: hidden;
+  border: 1px solid rgba(190, 221, 214, 0.9);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 35px -28px rgba(15, 118, 110, 0.55);
+}
+
+.feed-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1rem 0;
+}
+
+.feed-avatar {
+  display: grid;
+  width: 2.45rem;
+  height: 2.45rem;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #bbf7d0, #99f6e4);
+  color: #115e59;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.feed-status {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.67rem;
+  font-weight: 800;
+}
+
+.feed-description {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  color: #263548;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.feed-image-button {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: #e2e8f0;
+  cursor: zoom-in;
+}
+
+.feed-image { display: block; width: 100%; max-height: 29rem; object-fit: cover; }
+
+.feed-image-placeholder {
+  display: grid;
+  min-height: 12rem;
+  place-items: center;
+  background: linear-gradient(135deg, #e2f6f1, #f1f5f9);
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.feed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+}
+
+.feed-chip {
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 0.3rem 0.55rem;
+  color: #047857;
+  font-size: 0.69rem;
+  font-weight: 800;
+}
+
+.feed-zone { color: #64748b; font-size: 0.75rem; }
+
+.feed-owner-note,
+.feed-reaction-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid #e2eee9;
+  padding: 0.72rem 1rem;
+}
+
+.feed-owner-note { background: #fbfffd; }
+.feed-owner-note p { margin: 0; color: #64748b; font-size: 0.75rem; }
+
+.feed-text-action,
+.feed-reaction {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f766e;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.feed-text-action { text-decoration: underline; }
+.feed-reaction { border-radius: 999px; padding: 0.42rem 0.65rem; }
+.feed-reaction:hover, .feed-reaction.is-active { background: #e6f7f3; color: #047857; }
+
+.student-feed-empty,
+.student-feed-loading,
+.student-feed-error {
+  border-radius: 1rem;
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.student-feed-empty { border: 1px dashed #b8dbd3; background: rgba(255, 255, 255, 0.65); color: #64748b; }
+.student-feed-empty p { margin: 0.25rem 0; }
+.student-feed-loading { color: #0f766e; font-size: 0.85rem; }
+.student-feed-error { margin: 1rem 0; background: #fef2f2; color: #b91c1c; font-size: 0.82rem; }
+
+.student-load-more {
+  display: block;
+  margin: 1.25rem auto 0;
+  border: 1px solid #9fd9cb;
+  background: #fff;
+  color: #0f766e;
+}
+
+.feed-lightbox {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.feed-lightbox img { max-width: min(100%, 62rem); max-height: 86vh; border-radius: 1rem; object-fit: contain; }
+
+.feed-lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.65rem 0.9rem;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .student-feed-header { flex-direction: column; }
+  .student-feed-actions { justify-content: flex-start; }
+  .student-feed-toolbar { display: grid; grid-template-columns: 1fr 1fr; }
+  .student-feed-toolbar button { grid-column: span 2; }
+}
+
 @keyframes adminFormBorderSpin {
   to {
     transform: rotate(1turn);

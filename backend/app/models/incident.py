@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Enum as SAEnum
+from sqlalchemy import Boolean, Enum as SAEnum
 from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.location import IncidentLocation
     from app.models.notification import Notification
     from app.models.user import User
+    from app.models.community_reaction import CommunityReaction
 
 
 class Incident(Base, TimestampMixin):
@@ -31,6 +32,7 @@ class Incident(Base, TimestampMixin):
             "category",
             "priority",
         ),
+        Index("ix_incidents_community_feed", "is_community_visible", "created_at"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -55,6 +57,12 @@ class Incident(Base, TimestampMixin):
     )
     trace_id: Mapped[str | None] = mapped_column(String(64), index=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    community_consent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    is_community_visible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     reporter: Mapped["User | None"] = relationship(back_populates="incidents")
     location: Mapped["IncidentLocation"] = relationship(
@@ -73,5 +81,8 @@ class Incident(Base, TimestampMixin):
         back_populates="incident", cascade="all, delete-orphan"
     )
     jobs: Mapped[list["Job"]] = relationship(
+        back_populates="incident", cascade="all, delete-orphan"
+    )
+    reactions: Mapped[list["CommunityReaction"]] = relationship(
         back_populates="incident", cascade="all, delete-orphan"
     )

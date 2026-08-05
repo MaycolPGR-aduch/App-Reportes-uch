@@ -16,7 +16,7 @@ from app.models.assignment import IncidentAssignment
 from app.models.enums import IncidentStatus, JobType, PriorityLevel
 from app.models.incident import Incident
 from app.models.responsible import Responsible
-from app.services.ai import classify_incident
+from app.services.ai import AIClassificationError, classify_incident
 from app.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job, recover_expired_leases
 
 logger = logging.getLogger("campus.workers.ai")
@@ -126,7 +126,7 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             db.commit()
             time.sleep(poll)
             return
-        # Persist the lease before any network request to Gemini.
+        # Persist the lease before any external provider request.
         db.commit()
 
         incident = (
@@ -145,7 +145,18 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             db.commit()
             return
 
-        evidence_metadata = incident.evidences[0].metadata_json if incident.evidences else None
+        # A duplicate outbox job must not trigger another paid/free provider call.
+        # The successful result is immutable per incident and is the source read by
+        # every dashboard, so completing this job is sufficient.
+        existing_metric = (
+            db.query(AIMetric).filter(AIMetric.incident_id == incident.id).first()
+        )
+        if existing_metric is not None:
+            complete_job(db, job)
+            db.commit()
+            logger.info("ai_job_skipped_existing_metric incident_id=%s", incident.id)
+            return
+
         image_bytes = None
         image_mime_type = None
         if incident.evidences:
@@ -160,14 +171,14 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             result = classify_incident(
                 description=incident.description,
                 user_category=incident.category,
-                evidence_metadata=evidence_metadata,
                 image_bytes=image_bytes,
                 image_mime_type=image_mime_type,
             )
             ai_metric = AIMetric(
                 incident_id=incident.id,
-                model_name=settings.gemini_model,
-                prompt_version=settings.gemini_prompt_version,
+                provider=result.provider,
+                model_name=result.model_name,
+                prompt_version=settings.ai_prompt_version,
                 predicted_category=result.predicted_category,
                 priority_score=result.priority_score,
                 priority_label=result.priority_label,
@@ -191,6 +202,12 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             elif not result.is_incident and incident.status == IncidentStatus.REPORTED:
                 incident.status = IncidentStatus.IN_REVIEW
 
+            # Community visibility is opt-in and only becomes available after this
+            # durable moderation pass. A failed job leaves the default (private).
+            incident.is_community_visible = bool(
+                incident.community_consent and result.is_appropriate and result.is_incident
+            )
+
             if result.confidence >= 0.750 and result.is_incident:
                 incident.category = result.predicted_category
             if incident.priority != PriorityLevel.CRITICAL and result.is_incident:
@@ -206,7 +223,7 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 if responsible:
                     assigned_responsible = responsible
                     assignment_note = (
-                        f"Asignacion sugerida por IA ({settings.gemini_model}). "
+                        f"Asignacion sugerida por IA ({result.model_name}). "
                         f"Titulo sugerido: {result.suggested_title or 'N/A'}"
                     )
                     _create_or_update_assignment(
@@ -229,6 +246,32 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 )
             complete_job(db, job)
             db.commit()
+            logger.info(
+                "ai_job_completed incident_id=%s provider=%s model=%s fallback_index=%s",
+                incident.id,
+                result.provider,
+                result.model_name,
+                (result.raw_response or {}).get("fallback_index", 0),
+            )
+        except AIClassificationError as exc:
+            # Do not convert an unavailable/invalid AI answer into an approval.
+            # When retries are exhausted the incident stays private for a human.
+            fail_job(
+                db,
+                job,
+                error_message=str(exc),
+                retry_delay_seconds=settings.classification_retry_delay_seconds,
+            )
+            if job.status.value == "FAILED":
+                incident.status = IncidentStatus.IN_REVIEW
+                incident.is_community_visible = False
+            db.commit()
+            logger.warning(
+                "ai_job_provider_failed incident_id=%s attempts=%s error=%s",
+                incident.id,
+                exc.attempts,
+                str(exc),
+            )
         except Exception as exc:
             fail_job(
                 db,
@@ -237,6 +280,7 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 retry_delay_seconds=settings.classification_retry_delay_seconds,
             )
             db.commit()
+            logger.exception("ai_job_unexpected_failure incident_id=%s", incident.id)
 
 
 def run_worker() -> None:

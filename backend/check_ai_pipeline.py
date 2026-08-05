@@ -48,12 +48,12 @@ def main() -> int:
         print_fail("DATABASE_URL no está definido en .env")
         return 1
 
-    has_gemini_key = bool(env.get("GEMINI_API_KEY", "").strip())
-    gemini_model = env.get("GEMINI_MODEL", "")
-    if has_gemini_key:
-        print_ok(f"GEMINI_API_KEY configurada. GEMINI_MODEL={gemini_model or '(vacío)'}")
+    has_router_key = bool(env.get("AI_TOKENROUTER_API_KEY", "").strip())
+    primary_model = env.get("AI_IMAGE_PRIMARY_MODEL", "")
+    if has_router_key and primary_model:
+        print_ok(f"TokenRouter configurado. Modelo VLM principal={primary_model}")
     else:
-        print_warn("GEMINI_API_KEY no configurada. Se usará fallback heurístico.")
+        print_warn("TokenRouter o el modelo VLM principal no están configurados. La IA quedará en revisión manual.")
 
     try:
         conn = psycopg2.connect(normalize_db_url(db_url))
@@ -140,11 +140,11 @@ def main() -> int:
                     """
                 )
                 latest_raw = cur.fetchone()[0] or {}
-                fallback_reason = latest_raw.get("fallback_reason")
+                attempts = latest_raw.get("attempts_before_success")
                 source = latest_raw.get("source")
                 print_ok(f"Último origen IA: {source}")
-                if fallback_reason:
-                    print_warn(f"Último fallback_reason: {str(fallback_reason)[:220]}")
+                if attempts:
+                    print_warn(f"Intentos previos antes del éxito: {str(attempts)[:220]}")
             else:
                 print_warn("No hay registros en ai_metrics todavía.")
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from google import genai
+import httpx
 
 from app.core.config import get_settings
 from app.models.enums import IncidentCategory, PriorityLevel
@@ -15,6 +15,8 @@ from app.models.enums import IncidentCategory, PriorityLevel
 
 @dataclass
 class AIClassificationResult:
+    provider: str
+    model_name: str
     predicted_category: IncidentCategory
     priority_label: PriorityLevel
     priority_score: Decimal
@@ -29,73 +31,30 @@ class AIClassificationResult:
     raw_response: dict[str, Any]
 
 
+class AIClassificationError(RuntimeError):
+    """No configured model returned a valid classification.
+
+    The worker must retry this error and eventually route the incident to manual
+    review. It is deliberately not converted into a permissive local result:
+    unavailable AI must never publish evidence or auto-assign work.
+    """
+
+    def __init__(self, message: str, attempts: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.attempts = attempts
+
+
 CLASSIFICATION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "predicted_category": {
-            "type": "string",
-            "enum": ["INFRASTRUCTURE", "SECURITY", "CLEANING"],
-            "description": "Categoria final sugerida para la incidencia.",
-        },
-        "priority_label": {
-            "type": "string",
-            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            "description": "Prioridad sugerida de atencion.",
-        },
-        "priority_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Puntaje de prioridad de 0 a 100.",
-        },
-        "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Confianza del modelo de 0 a 1.",
-        },
-        "reasoning_summary": {
-            "type": "string",
-            "minLength": 8,
-            "description": "Justificacion breve de la clasificacion.",
-        },
-        "is_appropriate": {
-            "type": "boolean",
-            "description": "True si la imagen y el reporte son apropiados para el contexto universitario.",
-        },
-        "is_incident": {
-            "type": "boolean",
-            "description": "True si realmente corresponde a una incidencia reportable.",
-        },
-        "reason": {
-            "type": "string",
-            "description": "Motivo cuando no es apropiado o no es una incidencia. Vacio en caso contrario.",
-        },
-        "suggested_title": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 120,
-            "description": "Titulo breve sugerido para la incidencia.",
-        },
-        "assigned_to": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 120,
-            "description": "Area sugerida para atender la incidencia (ej. Seguridad, Limpieza, Mantenimiento, TI).",
-        },
-    },
-    "required": [
-        "predicted_category",
-        "priority_label",
-        "priority_score",
-        "confidence",
-        "reasoning_summary",
-        "is_appropriate",
-        "is_incident",
-        "reason",
-        "suggested_title",
-        "assigned_to",
-    ],
+    "predicted_category": "INFRASTRUCTURE | SECURITY | CLEANING",
+    "priority_label": "LOW | MEDIUM | HIGH | CRITICAL",
+    "priority_score": "number from 0 to 100",
+    "confidence": "number from 0 to 1",
+    "reasoning_summary": "short Spanish justification",
+    "is_appropriate": "boolean",
+    "is_incident": "boolean",
+    "reason": "short reason or empty string",
+    "suggested_title": "short title or empty string",
+    "assigned_to": "suggested campus area or empty string",
 }
 
 
@@ -108,208 +67,237 @@ def _clamp_decimal(value: Any, min_value: Decimal, max_value: Decimal) -> Decima
     return numeric
 
 
-def _infer_assigned_area(category: IncidentCategory) -> str:
-    if category == IncidentCategory.SECURITY:
-        return "Seguridad"
-    if category == IncidentCategory.CLEANING:
-        return "Limpieza"
-    return "Mantenimiento"
+def _clean_optional_text(value: Any, max_length: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value.strip()[:max_length] or None
 
 
-def _heuristic_classification(
-    description: str,
-    user_category: IncidentCategory,
+def _extract_json(text: str) -> dict[str, Any]:
+    """Accept raw JSON and fenced JSON without trusting provider formatting."""
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = candidate.split("\n", 1)[1] if "\n" in candidate else ""
+        if candidate.rstrip().endswith("```"):
+            candidate = candidate.rstrip()[:-3]
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        start, end = candidate.find("{"), candidate.rfind("}")
+        if start < 0 or end <= start:
+            raise ValueError("model did not return a JSON object")
+        parsed = json.loads(candidate[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("model response JSON must be an object")
+    return parsed
+
+
+def _parse_result(
     *,
-    error_context: str | None = None,
+    parsed: dict[str, Any],
+    provider: str,
+    model_name: str,
+    latency_ms: int,
+    raw_response: dict[str, Any],
 ) -> AIClassificationResult:
-    start = time.perf_counter()
-    text = description.lower()
+    required = set(CLASSIFICATION_SCHEMA)
+    missing = required.difference(parsed)
+    if missing:
+        raise ValueError(f"model response missing fields: {', '.join(sorted(missing))}")
 
-    security_keywords = {
-        "robo",
-        "asalto",
-        "arma",
-        "violencia",
-        "agresion",
-        "amenaza",
-        "pelea",
-    }
-    critical_keywords = {"incendio", "explosion", "fuga de gas", "corto", "electrico"}
-    cleaning_keywords = {"basura", "derrame", "sucio", "limpieza", "olor"}
+    reasoning_summary = _clean_optional_text(parsed["reasoning_summary"], 500)
+    if reasoning_summary is None or len(reasoning_summary) < 8:
+        raise ValueError("model response has an invalid reasoning_summary")
 
-    predicted = user_category
-    priority = PriorityLevel.MEDIUM
-    score = Decimal("55.00")
-    confidence = Decimal("0.550")
-    reason = "Clasificacion heuristica local."
-    title = "Incidencia reportada"
-
-    if any(keyword in text for keyword in critical_keywords):
-        predicted = IncidentCategory.INFRASTRUCTURE
-        priority = PriorityLevel.CRITICAL
-        score = Decimal("95.00")
-        confidence = Decimal("0.850")
-        reason = "Contiene palabras clave de riesgo critico."
-        title = "Riesgo critico en infraestructura"
-    elif any(keyword in text for keyword in security_keywords):
-        predicted = IncidentCategory.SECURITY
-        priority = PriorityLevel.HIGH
-        score = Decimal("86.00")
-        confidence = Decimal("0.780")
-        reason = "Contiene palabras clave de seguridad."
-        title = "Incidencia de seguridad reportada"
-    elif any(keyword in text for keyword in cleaning_keywords):
-        predicted = IncidentCategory.CLEANING
-        priority = PriorityLevel.LOW
-        score = Decimal("35.00")
-        confidence = Decimal("0.700")
-        reason = "Contiene palabras clave de limpieza."
-        title = "Incidencia de limpieza reportada"
-
-    latency_ms = int((time.perf_counter() - start) * 1000)
-    if error_context:
-        reason = "Clasificacion heuristica local por fallback de proveedor IA."
-
-    raw_response: dict[str, Any] = {
-        "source": "heuristic",
-        "is_appropriate": True,
-        "is_incident": True,
-        "suggested_title": title,
-        "assigned_to": _infer_assigned_area(predicted),
-    }
-    if error_context:
-        raw_response["fallback_reason"] = error_context[:300]
+    # bool('false') is True, so reject non-boolean values instead of coercing.
+    if not isinstance(parsed["is_appropriate"], bool) or not isinstance(parsed["is_incident"], bool):
+        raise ValueError("model response moderation values must be booleans")
 
     return AIClassificationResult(
-        predicted_category=predicted,
-        priority_label=priority,
-        priority_score=score,
-        confidence=confidence,
-        reasoning_summary=reason,
-        is_appropriate=True,
-        is_incident=True,
-        reason=None,
-        suggested_title=title,
-        assigned_to=_infer_assigned_area(predicted),
+        provider=provider,
+        model_name=model_name,
+        predicted_category=IncidentCategory(parsed["predicted_category"]),
+        priority_label=PriorityLevel(parsed["priority_label"]),
+        priority_score=_clamp_decimal(parsed["priority_score"], Decimal("0"), Decimal("100")),
+        confidence=_clamp_decimal(parsed["confidence"], Decimal("0"), Decimal("1")),
+        reasoning_summary=reasoning_summary,
+        is_appropriate=parsed["is_appropriate"],
+        is_incident=parsed["is_incident"],
+        reason=_clean_optional_text(parsed.get("reason"), 500),
+        suggested_title=_clean_optional_text(parsed.get("suggested_title"), 120),
+        assigned_to=_clean_optional_text(parsed.get("assigned_to"), 120),
         latency_ms=latency_ms,
         raw_response=raw_response,
     )
+
+
+def _build_messages(
+    *,
+    description: str,
+    user_category: IncidentCategory,
+    image_bytes: bytes | None,
+    image_mime_type: str | None,
+) -> list[dict[str, Any]]:
+    report = {
+        "description": description,
+        "reported_category": user_category.value,
+        "rules": {
+            "category_enum": ["INFRASTRUCTURE", "SECURITY", "CLEANING"],
+            "priority_enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            "language": "Spanish",
+            "safety": "If unsure whether content is appropriate or an incident, return false.",
+        },
+        "response_schema": CLASSIFICATION_SCHEMA,
+    }
+    content: list[dict[str, Any]] = [
+        {
+            "type": "text",
+            "text": (
+                "Eres un analista de incidencias de un campus universitario. "
+                "Analiza la descripción y la imagen. Responde exclusivamente un objeto JSON "
+                "válido que cumpla exactamente este esquema, sin markdown ni explicaciones externas.\n\n"
+                + json.dumps(report, ensure_ascii=False)
+            ),
+        }
+    ]
+    if image_bytes and image_mime_type:
+        data_url = f"data:{image_mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+    return [{"role": "user", "content": content}]
+
+
+def _call_tokenrouter(
+    *,
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    messages: list[dict[str, Any]],
+    timeout_seconds: float,
+    max_output_tokens: int,
+) -> tuple[dict[str, Any], int]:
+    """OpenAI-compatible request shared by every configured TokenRouter model."""
+    started = time.perf_counter()
+    try:
+        with httpx.Client(timeout=timeout_seconds) as client:
+            response = client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model_name,
+                    "messages": messages,
+                    "temperature": 0,
+                    "max_tokens": max_output_tokens,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        # Provider error bodies commonly identify quota, model-access, or a
+        # transient upstream problem. Keep diagnostics short and never include
+        # headers (which could contain credentials).
+        try:
+            error_payload = exc.response.json()
+            if isinstance(error_payload, dict):
+                detail = error_payload.get("message") or error_payload.get("error") or error_payload
+            else:
+                detail = error_payload
+        except ValueError:
+            detail = exc.response.text
+        raise RuntimeError(
+            f"request failed: HTTP {exc.response.status_code}: {str(detail)[:350]}"
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError(f"request failed: {type(exc).__name__}: {exc}") from exc
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    if not isinstance(payload, dict):
+        raise RuntimeError("provider returned a non-object response")
+    return payload, latency_ms
+
+
+def _response_content(payload: dict[str, Any]) -> str:
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("provider response has no assistant content") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("provider returned empty assistant content")
+    return content
+
+
+def _safe_usage(payload: dict[str, Any]) -> dict[str, Any] | None:
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return {
+        key: value
+        for key, value in usage.items()
+        if key in {"prompt_tokens", "completion_tokens", "total_tokens", "cost"}
+        and isinstance(value, (int, float))
+    }
 
 
 def classify_incident(
     *,
     description: str,
     user_category: IncidentCategory,
-    evidence_metadata: dict[str, Any] | None,
     image_bytes: bytes | None = None,
     image_mime_type: str | None = None,
 ) -> AIClassificationResult:
+    """Run the ordered VLM chain once; callers persist the successful result."""
     settings = get_settings()
-    if not settings.gemini_api_key:
-        return _heuristic_classification(
-            description,
-            user_category,
-            error_context="Gemini API key not configured",
-        )
+    models = [model for model in [settings.ai_image_primary_model, *settings.ai_image_fallback_models] if model]
+    if not settings.ai_tokenrouter_api_key:
+        raise AIClassificationError("TokenRouter API key is not configured", [])
+    if not models:
+        raise AIClassificationError("No image-capable AI model is configured", [])
 
-    start = time.perf_counter()
-    client = genai.Client(api_key=settings.gemini_api_key)
-
-    prompt = (
-        "Eres un analista de incidencias de campus universitario. "
-        "Evalua el reporte y, si hay imagen, usala para validar moderacion y veracidad de incidencia. "
-        "Responde SOLO JSON valido segun el schema, sin texto adicional."
+    messages = _build_messages(
+        description=description,
+        user_category=user_category,
+        image_bytes=image_bytes,
+        image_mime_type=image_mime_type,
     )
-    input_payload = {
-        "description": description,
-        "reported_category": user_category.value,
-        "evidence_metadata": evidence_metadata or {},
-        "rules": {
-            "category_enum": ["INFRASTRUCTURE", "SECURITY", "CLEANING"],
-            "priority_enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            "if_not_appropriate_or_not_incident": (
-                "Mantener categoria reportada y prioridad MEDIUM salvo riesgo evidente."
-            ),
-            "suggested_assignees_examples": [
-                "Seguridad",
-                "Limpieza",
-                "Mantenimiento",
-                "TI",
-                "Servicios Generales",
-            ],
-        },
-    }
-
-    try:
-        parts: list[dict[str, Any]] = [
-            {
-                "text": (
-                    f"{prompt}\n\n"
-                    "Datos del reporte (JSON):\n"
-                    f"{json.dumps(input_payload, ensure_ascii=True)}"
-                )
+    attempts: list[dict[str, Any]] = []
+    for index, model_name in enumerate(models):
+        try:
+            payload, latency_ms = _call_tokenrouter(
+                base_url=settings.ai_tokenrouter_base_url,
+                api_key=settings.ai_tokenrouter_api_key,
+                model_name=model_name,
+                messages=messages,
+                timeout_seconds=settings.ai_request_timeout_seconds,
+                max_output_tokens=settings.ai_max_output_tokens,
+            )
+            content = _response_content(payload)
+            parsed = _extract_json(content)
+            raw_response = {
+                "source": "tokenrouter",
+                "provider": "tokenrouter",
+                "model": model_name,
+                "fallback_index": index,
+                "usage": _safe_usage(payload),
+                "is_appropriate": parsed.get("is_appropriate"),
+                "is_incident": parsed.get("is_incident"),
             }
-        ]
-        if image_bytes and image_mime_type:
-            parts.append(
+            return _parse_result(
+                parsed=parsed,
+                provider="tokenrouter",
+                model_name=model_name,
+                latency_ms=latency_ms,
+                raw_response={**raw_response, "attempts_before_success": attempts},
+            )
+        except Exception as exc:
+            attempts.append(
                 {
-                    "inline_data": {
-                        "mime_type": image_mime_type,
-                        "data": base64.b64encode(image_bytes).decode("ascii"),
-                    }
+                    "model": model_name,
+                    "error": f"{type(exc).__name__}: {str(exc)[:300]}",
                 }
             )
 
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=[
-                {
-                    "role": "user",
-                    "parts": parts,
-                }
-            ],
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": CLASSIFICATION_SCHEMA,
-                "thinking_config": {
-                    "thinking_budget": settings.gemini_thinking_budget,
-                },
-            },
-        )
-
-        response_text = (response.text or "").strip()
-        if not response_text:
-            raise ValueError("Gemini devolvio respuesta vacia")
-
-        parsed = json.loads(response_text)
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        return AIClassificationResult(
-            predicted_category=IncidentCategory(parsed["predicted_category"]),
-            priority_label=PriorityLevel(parsed["priority_label"]),
-            priority_score=_clamp_decimal(
-                parsed["priority_score"], Decimal("0"), Decimal("100")
-            ),
-            confidence=_clamp_decimal(parsed["confidence"], Decimal("0"), Decimal("1")),
-            reasoning_summary=parsed["reasoning_summary"].strip()[:500],
-            is_appropriate=bool(parsed["is_appropriate"]),
-            is_incident=bool(parsed["is_incident"]),
-            reason=(parsed.get("reason") or "").strip()[:500] or None,
-            suggested_title=(parsed.get("suggested_title") or "").strip()[:120] or None,
-            assigned_to=(parsed.get("assigned_to") or "").strip()[:120] or None,
-            latency_ms=latency_ms,
-            raw_response={
-                "source": "gemini",
-                "output_text": response_text,
-                "is_appropriate": bool(parsed["is_appropriate"]),
-                "is_incident": bool(parsed["is_incident"]),
-                "reason": (parsed.get("reason") or "").strip()[:500],
-                "suggested_title": (parsed.get("suggested_title") or "").strip()[:120],
-                "assigned_to": (parsed.get("assigned_to") or "").strip()[:120],
-            },
-        )
-    except Exception as exc:
-        return _heuristic_classification(
-            description,
-            user_category,
-            error_context=f"Gemini failure: {exc}",
-        )
+    diagnostic = "; ".join(
+        f"{attempt['model']}: {attempt['error']}" for attempt in attempts
+    )
+    raise AIClassificationError(
+        f"All configured AI models failed. {diagnostic[:350]}", attempts
+    )

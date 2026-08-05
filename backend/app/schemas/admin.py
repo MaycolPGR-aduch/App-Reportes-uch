@@ -31,7 +31,7 @@ class JobQueueSummaryItem(BaseModel):
     count: int
 
 
-class GeminiStatusOut(BaseModel):
+class AIProviderStatusOut(BaseModel):
     api_key_configured: bool
     model: str
     state: str
@@ -46,7 +46,7 @@ class SystemStatusResponse(BaseModel):
     server_time: datetime
     queue_summary: list[JobQueueSummaryItem]
     workers: list[WorkerStatusOut]
-    gemini: GeminiStatusOut
+    ai: AIProviderStatusOut
     notes: list[str]
 
 

@@ -40,6 +40,7 @@ class EvidenceOut(BaseModel):
 
 class AIMetricOut(BaseModel):
     id: UUID
+    provider: str
     model_name: str
     prompt_version: str
     predicted_category: IncidentCategory
@@ -114,3 +115,43 @@ class IncidentDetail(BaseModel):
 class IncidentListResponse(BaseModel):
     total: int
     items: list[IncidentListItem]
+
+
+class StudentFeedItem(BaseModel):
+    id: UUID
+    category: IncidentCategory
+    status: IncidentStatus
+    description: str
+    created_at: datetime
+    location_zone_name: str | None
+    has_image: bool
+    community_consent: bool
+    is_community_visible: bool
+
+
+class StudentFeedResponse(BaseModel):
+    total: int
+    items: list[StudentFeedItem]
+
+
+class CommunityFeedItem(BaseModel):
+    id: UUID
+    category: IncidentCategory
+    status: IncidentStatus
+    description: str
+    created_at: datetime
+    location_zone_name: str | None
+    has_image: bool
+    reaction_count: int
+    reacted_by_me: bool
+    is_own_report: bool
+
+
+class CommunityFeedResponse(BaseModel):
+    total: int
+    items: list[CommunityFeedItem]
+
+
+class ReactionStateResponse(BaseModel):
+    reaction_count: int
+    reacted_by_me: bool
