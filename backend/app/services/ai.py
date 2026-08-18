@@ -295,9 +295,14 @@ def classify_incident(
                 }
             )
 
+    # Give every model a slice of the budget instead of truncating the joined
+    # string: a verbose first failure used to push the later models out of the
+    # message entirely, and the actionable cause (an exhausted account answers
+    # on the second model) never reached jobs.last_error.
+    per_model = max(60, 300 // max(len(attempts), 1))
     diagnostic = "; ".join(
-        f"{attempt['model']}: {attempt['error']}" for attempt in attempts
+        f"{attempt['model']}: {attempt['error'][:per_model]}" for attempt in attempts
     )
     raise AIClassificationError(
-        f"All configured AI models failed. {diagnostic[:350]}", attempts
+        f"All configured AI models failed. {diagnostic}"[:500], attempts
     )

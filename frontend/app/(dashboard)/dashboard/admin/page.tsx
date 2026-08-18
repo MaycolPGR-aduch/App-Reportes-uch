@@ -719,13 +719,34 @@ export default function AdminDashboardPage() {
                 API: <strong>{system.api_ok ? "OK" : "FAIL"}</strong>
               </p>
               <p>
-                Router IA: <strong>{system.ai.state}</strong> ({system.ai.model})
+                Router IA:{" "}
+                <strong
+                  className={
+                    system.ai.state === "FAILING" || system.ai.state === "MISSING_CONFIGURATION"
+                      ? "text-red-700"
+                      : system.ai.state === "RETRYING" || system.ai.state === "FALLBACK_ACTIVE"
+                        ? "text-amber-700"
+                        : "text-emerald-700"
+                  }
+                >
+                  {system.ai.state}
+                </strong>{" "}
+                ({system.ai.model})
+              </p>
+              <p>
+                Clasificaciones fallidas 24h:{" "}
+                <strong className={system.ai.failed_classifications_24h > 0 ? "text-red-700" : ""}>
+                  {system.ai.failed_classifications_24h}
+                </strong>
               </p>
               <p>
                 Fallback 24h: <strong>{system.ai.fallback_count_24h}</strong>
               </p>
               <p>
-                Quota 429: <strong>{system.ai.quota_exhausted_detected ? "SI" : "NO"}</strong>
+                Cuota agotada:{" "}
+                <strong className={system.ai.quota_exhausted_detected ? "text-red-700" : ""}>
+                  {system.ai.quota_exhausted_detected ? "SI" : "NO"}
+                </strong>
               </p>
               <div className="grid gap-1">
                 {system.workers.map((w) => (
@@ -754,6 +775,11 @@ export default function AdminDashboardPage() {
                     </p>
                   ))}
                 </div>
+              ) : null}
+              {system.ai.latest_failure_reason ? (
+                <p className="rounded-lg bg-red-50 p-2 text-xs text-red-800">
+                  Último fallo del router: {system.ai.latest_failure_reason}
+                </p>
               ) : null}
               {system.ai.latest_fallback_reason ? (
                 <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">

@@ -182,6 +182,8 @@ export type AIProviderStatus = {
   quota_exhausted_detected: boolean;
   latest_fallback_reason: string | null;
   latest_source: string | null;
+  failed_classifications_24h: number;
+  latest_failure_reason: string | null;
 };
 
 export type SystemStatusResponse = {

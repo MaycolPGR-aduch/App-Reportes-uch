@@ -39,6 +39,8 @@ class AIProviderStatusOut(BaseModel):
     quota_exhausted_detected: bool
     latest_fallback_reason: str | None
     latest_source: str | None
+    failed_classifications_24h: int = 0
+    latest_failure_reason: str | None = None
 
 
 class SystemStatusResponse(BaseModel):
