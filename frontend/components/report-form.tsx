@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ApiHttpError,
   IncidentCategory,
-  ReportImageAnalysis,
   UserRole,
-  analyzeReportImage,
   createReport,
   getCurrentUser,
   login,
@@ -47,10 +45,7 @@ export function ReportForm() {
   const [locationLoading, setLocationLoading] = useState(false);
 
   const [photo, setPhoto] = useState<File | null>(null);
-  const [analysis, setAnalysis] = useState<ReportImageAnalysis | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [allowNonIncidentOverride, setAllowNonIncidentOverride] = useState(false);
+  const [communityConsent, setCommunityConsent] = useState(false);
   const [reportTitle, setReportTitle] = useState("");
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -168,36 +163,6 @@ export function ReportForm() {
     );
   };
 
-  const runImageAnalysis = async (file: File) => {
-    setAnalysisLoading(true);
-    setAnalysisError(null);
-    setAllowNonIncidentOverride(false);
-    try {
-      const formData = new FormData();
-      formData.append("photo", file);
-      formData.append("category", category);
-      if (description.trim()) {
-        formData.append("description", description.trim());
-      }
-
-      const authToken = mode === "AUTHENTICATED" ? token : null;
-      const result = await analyzeReportImage(authToken, formData, turnstileToken);
-      setAnalysis(result);
-
-      if (result.suggested_title) {
-        setReportTitle(result.suggested_title);
-      }
-      if (result.predicted_category) {
-        setCategory(result.predicted_category);
-      }
-    } catch (error) {
-      setAnalysis(null);
-      setAnalysisError(error instanceof Error ? error.message : "No se pudo analizar la imagen");
-    } finally {
-      setAnalysisLoading(false);
-    }
-  };
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode === "AUTHENTICATED" && !token) {
@@ -206,24 +171,6 @@ export function ReportForm() {
     }
     if (!photo) {
       setSubmitError("Adjunta una foto de evidencia.");
-      return;
-    }
-    if (analysisLoading) {
-      setSubmitError("Espera a que finalice el análisis de IA.");
-      return;
-    }
-    if (!analysis) {
-      setSubmitError("Primero analiza la imagen con IA antes de enviar.");
-      return;
-    }
-    if (!analysis.is_appropriate) {
-      setSubmitError("No puedes enviar este reporte porque la imagen fue marcada como no permitida.");
-      return;
-    }
-    if (!analysis.is_incident && !allowNonIncidentOverride) {
-      setSubmitError(
-        "La IA indica que no es incidencia. Si realmente lo es, usa el botón de confirmación.",
-      );
       return;
     }
     if (!coordinates) {
@@ -250,13 +197,16 @@ export function ReportForm() {
       formData.append("accuracy_m", String(coordinates.accuracy));
     }
     formData.append("photo", photo);
+    if (mode === "AUTHENTICATED" && communityConsent) {
+      formData.append("community_consent", "true");
+    }
 
     setSubmitLoading(true);
     setSubmitError(null);
     setSubmitSuccess(null);
     try {
-      const authToken = mode === "AUTHENTICATED" ? token : null;
-      const response = await createReport(authToken, formData, turnstileToken);
+      // The backend derives the mode from the session cookie, not from a header.
+      const response = await createReport(formData, turnstileToken);
       const prefix = mode === "ANONYMOUS" ? "Reporte anonimo enviado" : "Incidencia enviada";
       setSubmitSuccess(
         `${prefix} (${response.incident_id.slice(0, 8)}). Estado IA: ${response.ai_status}`,
@@ -264,8 +214,7 @@ export function ReportForm() {
       setDescription("");
       setReportTitle("");
       setPhoto(null);
-      setAnalysis(null);
-      setAllowNonIncidentOverride(false);
+      setCommunityConsent(false);
     } catch (error) {
       if (error instanceof ApiHttpError && error.status === 401) {
         handleLogout();
@@ -279,21 +228,29 @@ export function ReportForm() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+    <div className="mx-auto w-full max-w-3xl">
       <section className="rounded-3xl border border-[var(--line)] bg-[var(--card)] p-6 shadow-sm sm:p-8">
         <div className="mb-5 grid gap-3 rounded-2xl border border-[var(--line)] bg-emerald-50/70 p-4">
-          <p className="text-sm font-semibold text-emerald-900">Modo de reporte</p>
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">¿Cómo quieres enviar el reporte?</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Con una cuenta podrás consultar su avance; el reporte anónimo no permite seguimiento.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setMode("ANONYMOUS")}
+              onClick={() => {
+                setMode("ANONYMOUS");
+                setCommunityConsent(false);
+              }}
               className={`rounded-full px-4 py-2 text-sm font-semibold ${
                 mode === "ANONYMOUS"
                   ? "bg-emerald-700 text-white"
                   : "border border-emerald-200 bg-white text-emerald-800"
               }`}
             >
-              Anonimo (sin login)
+              Reportar anónimamente
             </button>
             <button
               type="button"
@@ -304,7 +261,7 @@ export function ReportForm() {
                   : "border border-emerald-200 bg-white text-emerald-800"
               }`}
             >
-              Con cuenta campus
+              Usar mi cuenta
             </button>
           </div>
         </div>
@@ -419,27 +376,69 @@ export function ReportForm() {
         ) : null}
 
         <form className="grid gap-5" onSubmit={handleSubmit}>
-          {mode === "ANONYMOUS" ? <TurnstileWidget onToken={setTurnstileToken} /> : null}
+          <div className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">1. Cuéntanos qué ocurrió</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Incluye qué observaste y una referencia fácil de reconocer.
+              </p>
+            </div>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-800">
+              Título <span className="font-normal text-slate-500">(opcional)</span>
+              <input
+                className="rounded-xl border border-[var(--line)] px-3 py-2.5 font-normal outline-none focus:border-emerald-600"
+                value={reportTitle}
+                onChange={(event) => setReportTitle(event.target.value)}
+                maxLength={120}
+                placeholder="Ejemplo: Cable expuesto en el pabellón B"
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-800">
+              Categoría
+              <select
+                className="rounded-xl border border-[var(--line)] px-3 py-2.5 font-normal outline-none focus:border-emerald-600"
+                value={category}
+                onChange={(event) => setCategory(event.target.value as IncidentCategory)}
+              >
+                <option value="INFRASTRUCTURE">Infraestructura</option>
+                <option value="SECURITY">Seguridad</option>
+                <option value="CLEANING">Limpieza</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-800">
+              Descripción
+              <textarea
+                className="min-h-32 rounded-xl border border-[var(--line)] px-3 py-2.5 font-normal outline-none focus:border-emerald-600"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={280}
+                placeholder="Ejemplo: La luminaria está caída junto a la entrada principal y bloquea parte del paso."
+                required
+              />
+              <span className="text-right text-xs font-normal text-slate-500">
+                {description.length}/280 caracteres
+              </span>
+            </label>
+          </div>
+
           <div className="grid gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-            <p className="text-sm font-semibold text-emerald-900">1. Evidencia fotografica</p>
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">2. Adjunta una foto</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Procura que el problema se vea con claridad y evita fotografiar rostros.
+              </p>
+            </div>
             <input
               ref={fileRef}
               type="file"
               accept="image/jpeg,image/png,image/webp"
               capture="environment"
-              onChange={async (event) => {
+              onChange={(event) => {
                 const selected = event.target.files?.[0] ?? null;
                 setPhoto(selected);
                 setSubmitError(null);
                 setSubmitSuccess(null);
                 setReportTitle("");
-                if (!selected) {
-                  setAnalysis(null);
-                  setAnalysisError(null);
-                  setAllowNonIncidentOverride(false);
-                  return;
-                }
-                await runImageAnalysis(selected);
               }}
               className="hidden"
             />
@@ -448,12 +447,12 @@ export function ReportForm() {
               onClick={() => fileRef.current?.click()}
               className="rounded-2xl bg-[var(--warning)] px-5 py-4 text-base font-bold text-white hover:brightness-95"
             >
-              Tomar / Adjuntar foto
+              Tomar o seleccionar foto
             </button>
             {photo ? (
               <p className="text-xs text-slate-600">Archivo: {photo.name}</p>
             ) : (
-              <p className="text-xs text-slate-600">Sin foto seleccionada.</p>
+              <p className="text-xs text-slate-600">Todavía no seleccionaste una foto.</p>
             )}
             {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -463,105 +462,59 @@ export function ReportForm() {
                 className="h-56 w-full rounded-xl border border-[var(--line)] object-cover"
               />
             ) : null}
-            {analysisLoading ? (
-              <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-                Analizando imagen con IA...
-              </p>
-            ) : null}
-            {analysisError ? (
-              <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{analysisError}</p>
-            ) : null}
-            {analysis ? (
-              <div className="grid gap-2 rounded-xl border border-[var(--line)] bg-white p-3 text-xs">
-                <p className="font-semibold text-slate-800">
-                  Validación IA:{" "}
-                  {analysis.is_appropriate
-                    ? analysis.is_incident
-                      ? "Incidencia detectada"
-                      : "No parece incidencia"
-                    : "Contenido no permitido"}
-                </p>
-                {analysis.reason ? (
-                  <p className="text-slate-700">Motivo: {analysis.reason}</p>
-                ) : null}
-                {analysis.assigned_to ? (
-                  <p className="text-slate-700">Área sugerida: {analysis.assigned_to}</p>
-                ) : null}
-                {!analysis.is_appropriate ? (
-                  <p className="rounded-lg bg-red-50 px-2 py-1 text-red-700">
-                    Esta imagen no se puede enviar por política de contenido.
-                  </p>
-                ) : null}
-                {analysis.is_appropriate && !analysis.is_incident && !allowNonIncidentOverride ? (
-                  <button
-                    type="button"
-                    onClick={() => setAllowNonIncidentOverride(true)}
-                    className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600"
-                  >
-                    ¿Realmente se trata de una incidencia?
-                  </button>
-                ) : null}
-                {analysis.is_appropriate && !analysis.is_incident && allowNonIncidentOverride ? (
-                  <p className="rounded-lg bg-amber-50 px-2 py-1 text-amber-800">
-                    Confirmación manual activa: podrás enviar el reporte.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+            <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+              La evidencia se revisará después del envío. No necesitas esperar en esta pantalla.
+            </p>
           </div>
 
           <div className="grid gap-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-4">
-            <p className="text-sm font-semibold text-amber-900">2. Ubicacion GPS</p>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">3. Confirma la ubicación</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Usaremos tu posición únicamente para ubicar la incidencia dentro del campus.
+              </p>
+            </div>
             <button
               type="button"
               onClick={requestLocation}
               className="rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700"
               disabled={locationLoading}
             >
-              {locationLoading ? "Obteniendo ubicacion..." : "Capturar ubicacion actual"}
+              {locationLoading ? "Obteniendo ubicación..." : "Usar mi ubicación actual"}
             </button>
             {coordinates ? (
-              <p className="font-mono text-xs text-slate-700">
-                lat {coordinates.latitude.toFixed(6)} | lon {coordinates.longitude.toFixed(6)} | acc{" "}
-                {coordinates.accuracy ? `${coordinates.accuracy.toFixed(1)}m` : "N/A"}
+              <p className="rounded-xl bg-white/80 px-3 py-2 text-xs font-medium text-emerald-800">
+                Ubicación capturada correctamente
+                {coordinates.accuracy ? ` · precisión aproximada ${coordinates.accuracy.toFixed(0)} m` : ""}
               </p>
             ) : null}
             {locationError ? <p className="text-xs text-red-600">{locationError}</p> : null}
           </div>
 
-          <div className="grid gap-3 rounded-2xl border border-[var(--line)] p-4">
-            <p className="text-sm font-semibold text-slate-900">3. Descripcion breve</p>
-            <label className="grid gap-1 text-sm">
-              Título sugerido por IA (editable)
-              <input
-                className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
-                value={reportTitle}
-                onChange={(event) => setReportTitle(event.target.value)}
-                maxLength={120}
-                placeholder="Ejemplo: Cable expuesto en pabellón B"
-              />
-            </label>
-            <label className="grid gap-1 text-sm">
-              Categoria
-              <select
-                className="rounded-xl border border-[var(--line)] px-3 py-2 outline-none focus:border-emerald-600"
-                value={category}
-                onChange={(event) => setCategory(event.target.value as IncidentCategory)}
-              >
-                <option value="INFRASTRUCTURE">Infraestructura</option>
-                <option value="SECURITY">Seguridad</option>
-                <option value="CLEANING">Limpieza</option>
-              </select>
-            </label>
-            <textarea
-              className="min-h-28 rounded-xl border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-emerald-600"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              maxLength={280}
-              placeholder="Ejemplo: luminaria caida frente al pabellon B."
-              required
-            />
-          </div>
+          {mode === "AUTHENTICATED" && token ? (
+            <div className="grid gap-3 rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+              <div>
+                <p className="text-sm font-semibold text-sky-950">4. Privacidad del reporte</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  El reporte es privado de forma predeterminada.
+                </p>
+              </div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-sm text-emerald-950">
+                <input
+                  type="checkbox"
+                  checked={communityConsent}
+                  onChange={(event) => setCommunityConsent(event.target.checked)}
+                  className="mt-1 h-4 w-4 accent-emerald-700"
+                />
+                <span>
+                  <strong className="block">Compartir anónimamente en Comunidad</strong>
+                  Podrá aparecer sin tu identidad después de una revisión automática. Puedes retirarlo desde Mis reportes.
+                </span>
+              </label>
+            </div>
+          ) : null}
+
+          {mode === "ANONYMOUS" ? <TurnstileWidget onToken={setTurnstileToken} /> : null}
 
           {submitError ? (
             <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
@@ -576,20 +529,11 @@ export function ReportForm() {
             disabled={submitLoading}
             className="rounded-2xl bg-emerald-700 px-5 py-4 text-base font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {submitLoading ? "Enviando reporte..." : "Enviar incidencia"}
+            {submitLoading ? "Enviando reporte..." : "Enviar reporte"}
           </button>
         </form>
       </section>
 
-      <aside className="rounded-3xl border border-[var(--line)] bg-[var(--card)] p-6 shadow-sm">
-        <h3 className="font-heading text-lg font-semibold text-emerald-900">Flujo MVP</h3>
-        <ol className="mt-3 grid gap-3 text-sm text-[var(--text-muted)]">
-          <li>1. Modo anonimo o con cuenta segun contexto.</li>
-          <li>2. El reporte entra por API unica con evidencia + GPS.</li>
-          <li>3. Se guarda transaccionalmente en PostgreSQL.</li>
-          <li>4. Se encola clasificacion IA y alertas por correo.</li>
-        </ol>
-      </aside>
     </div>
   );
 }

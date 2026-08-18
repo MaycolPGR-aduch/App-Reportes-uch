@@ -30,7 +30,6 @@ class Settings:
     require_turnstile: bool
     rate_limit_login: int
     rate_limit_public_report: int
-    rate_limit_image_analysis: int
     max_image_pixels: int
     job_lease_seconds: int
     retention_days: int
@@ -39,16 +38,17 @@ class Settings:
     cors_origins: list[str]
     local_storage_path: Path
     max_image_size_mb: int
-    gemini_api_key: str | None
-    gemini_model: str
-    gemini_prompt_version: str
-    gemini_thinking_budget: int
+    ai_tokenrouter_api_key: str | None
+    ai_tokenrouter_base_url: str
+    ai_image_primary_model: str | None
+    ai_image_fallback_models: list[str]
+    ai_prompt_version: str
+    ai_request_timeout_seconds: float
+    ai_max_output_tokens: int
     auto_assign_enabled: bool
     brevo_api_key: str | None
     brevo_from_email: str | None
     brevo_from_name: str
-    sendgrid_api_key: str | None
-    sendgrid_from_email: str | None
     default_alert_email: str | None
     dashboard_base_url: str
     frontend_base_url: str
@@ -109,7 +109,6 @@ def get_settings() -> Settings:
         require_turnstile=_as_bool(os.getenv("REQUIRE_TURNSTILE"), default=app_env.lower() == "production"),
         rate_limit_login=int(os.getenv("RATE_LIMIT_LOGIN", "5")),
         rate_limit_public_report=int(os.getenv("RATE_LIMIT_PUBLIC_REPORT", "3")),
-        rate_limit_image_analysis=int(os.getenv("RATE_LIMIT_IMAGE_ANALYSIS", "10")),
         max_image_pixels=int(os.getenv("MAX_IMAGE_PIXELS", "25000000")),
         job_lease_seconds=int(os.getenv("JOB_LEASE_SECONDS", "300")),
         retention_days=int(os.getenv("RETENTION_DAYS", "180")),
@@ -118,16 +117,19 @@ def get_settings() -> Settings:
         cors_origins=cors_origins,
         local_storage_path=local_storage_path,
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),
-        gemini_api_key=os.getenv("GEMINI_API_KEY"),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        gemini_prompt_version=os.getenv("GEMINI_PROMPT_VERSION", "mvp-v1"),
-        gemini_thinking_budget=int(os.getenv("GEMINI_THINKING_BUDGET", "0")),
+        ai_tokenrouter_api_key=os.getenv("AI_TOKENROUTER_API_KEY"),
+        ai_tokenrouter_base_url=os.getenv(
+            "AI_TOKENROUTER_BASE_URL", "https://api.tokenrouter.com/v1"
+        ).rstrip("/"),
+        ai_image_primary_model=os.getenv("AI_IMAGE_PRIMARY_MODEL") or None,
+        ai_image_fallback_models=_as_list(os.getenv("AI_IMAGE_FALLBACK_MODELS")),
+        ai_prompt_version=os.getenv("AI_PROMPT_VERSION", "incident-classification-v2"),
+        ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "30")),
+        ai_max_output_tokens=int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")),
         auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
         brevo_api_key=os.getenv("BREVO_API_KEY"),
         brevo_from_email=os.getenv("BREVO_FROM_EMAIL"),
         brevo_from_name=os.getenv("BREVO_FROM_NAME", "Campus Alertas"),
-        sendgrid_api_key=os.getenv("SENDGRID_API_KEY"),
-        sendgrid_from_email=os.getenv("SENDGRID_FROM_EMAIL"),
         default_alert_email=os.getenv("DEFAULT_ALERT_EMAIL"),
         dashboard_base_url=os.getenv(
             "DASHBOARD_BASE_URL", "http://localhost:3000/dashboard"

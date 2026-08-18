@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import escape
 
 import httpx
 from sqlalchemy.orm import Session
@@ -71,28 +72,36 @@ def resolve_recipients(
 
 
 def _compose_html(incident: Incident) -> str:
+    # sanitize_description only strips control characters, so reporter-supplied
+    # text still carries markup. Escaping belongs here, at the presentation edge.
     settings = get_settings()
-    detail_url = f"{settings.dashboard_base_url}/{incident.id}"
+    detail_url = escape(f"{settings.dashboard_base_url}/{incident.id}", quote=True)
     location_html = "<p><strong>Ubicacion:</strong> Sin coordenadas</p>"
     if incident.location:
-        zone_name = incident.location.resolved_zone_name or "Zona no definida"
+        zone_name = escape(incident.location.resolved_zone_name or "Zona no definida")
         location_html = (
             f"<p><strong>Zona detectada:</strong> {zone_name}</p>"
-            f"<p><strong>Estado ubicacion:</strong> {incident.location.location_status}</p>"
+            f"<p><strong>Estado ubicacion:</strong> {escape(incident.location.location_status)}</p>"
             "<p><strong>GPS:</strong> "
             f"{incident.location.latitude:.6f}, {incident.location.longitude:.6f}"
             "</p>"
         )
 
+    # Anonymous reports carry no reporter row; mirror the label used by the
+    # protected incident serializer instead of dereferencing a null relation.
+    reporter_label = escape(
+        incident.reporter.campus_id if incident.reporter else "Anonimo"
+    )
+
     return (
         "<h2>Nueva incidencia en campus</h2>"
-        f"<p><strong>ID:</strong> {incident.id}</p>"
-        f"<p><strong>Categoria:</strong> {incident.category.value}</p>"
-        f"<p><strong>Prioridad:</strong> {incident.priority.value}</p>"
-        f"<p><strong>Estado:</strong> {incident.status.value}</p>"
+        f"<p><strong>ID:</strong> {escape(str(incident.id))}</p>"
+        f"<p><strong>Categoria:</strong> {escape(incident.category.value)}</p>"
+        f"<p><strong>Prioridad:</strong> {escape(incident.priority.value)}</p>"
+        f"<p><strong>Estado:</strong> {escape(incident.status.value)}</p>"
         f"{location_html}"
-        f"<p><strong>Descripcion:</strong> {incident.description}</p>"
-        f"<p><strong>Reportante:</strong> {incident.reporter.campus_id}</p>"
+        f"<p><strong>Descripcion:</strong> {escape(incident.description)}</p>"
+        f"<p><strong>Reportante:</strong> {reporter_label}</p>"
         f"<p><a href='{detail_url}'>Abrir en dashboard</a></p>"
     )
 

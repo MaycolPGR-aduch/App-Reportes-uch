@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -19,10 +21,20 @@ from app.db.session import engine
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    settings.local_storage_path.mkdir(parents=True, exist_ok=True)
+    if settings.auto_create_schema:
+        Base.metadata.create_all(bind=engine)
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     debug=settings.app_debug,
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 if settings.cors_origins:
@@ -62,21 +74,16 @@ async def security_middleware(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
-def startup_event() -> None:
-    settings.local_storage_path.mkdir(parents=True, exist_ok=True)
-    if settings.auto_create_schema:
-        Base.metadata.create_all(bind=engine)
-
-
 @app.get("/health")
 @app.get("/health/live")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
-def readiness() -> dict[str, str]:
+# response_model=None: the union return type is not a valid Pydantic field, and
+# FastAPI would otherwise infer it from the annotation.
+@app.get("/health/ready", response_model=None)
+def readiness() -> dict[str, str] | JSONResponse:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

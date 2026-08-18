@@ -1,15 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserRole, getCurrentUser, login, logout } from "@/lib/api-client";
-import { IncidentsWorkspace } from "@/components/incidents-workspace";
+import { CurrentUser, UserRole, getCurrentUser, login, logout } from "@/lib/api-client";
+import { StudentIncidentsFeed } from "@/components/student-incidents-feed";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [campusId, setCampusId] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -20,7 +20,9 @@ export default function DashboardPage() {
       .then((user) => {
         setToken("cookie-session");
         setRole(user.role);
+        setUser(user);
         if (user.role === "STAFF") router.replace("/dashboard/staff");
+        if (user.role === "ADMIN") router.replace("/dashboard/admin");
       })
       .catch(() => undefined);
   }, [router]);
@@ -29,6 +31,7 @@ export default function DashboardPage() {
     await logout().catch(() => undefined);
     setToken(null);
     setRole(null);
+    setUser(null);
   };
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -42,6 +45,11 @@ export default function DashboardPage() {
       setPassword("");
       if (response.role === "STAFF") {
         router.push("/dashboard/staff");
+      } else if (response.role === "ADMIN") {
+        router.push("/dashboard/admin");
+      } else {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
       }
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : "No se pudo iniciar sesion");
@@ -103,30 +111,13 @@ export default function DashboardPage() {
     );
   }
 
+  if (role === "STUDENT" && user) {
+    return <StudentIncidentsFeed fullName={user.full_name} onLogout={handleLogout} />;
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-heading text-3xl font-bold text-emerald-950">
-          Dashboard de Incidencias
-        </h1>
-        <div className="flex items-center gap-2">
-          {role === "ADMIN" ? (
-            <Link
-              href="/dashboard/admin"
-              className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
-            >
-              Ir a panel admin
-            </Link>
-          ) : null}
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold"
-          >
-            Cerrar sesion
-          </button>
-        </div>
-      </div>
-      <IncidentsWorkspace token={token} />
+    <main className="mx-auto flex w-full max-w-6xl flex-1 items-center justify-center px-4 py-12">
+      <p className="text-sm text-slate-600">Abriendo tu panel…</p>
     </main>
   );
 }

@@ -27,6 +27,46 @@ export type IncidentListResponse = {
   items: IncidentListItem[];
 };
 
+export type StudentFeedItem = {
+  id: string;
+  category: IncidentCategory;
+  status: IncidentStatus;
+  description: string;
+  created_at: string;
+  location_zone_name: string | null;
+  has_image: boolean;
+  community_consent: boolean;
+  is_community_visible: boolean;
+};
+
+export type CommunityFeedItem = {
+  id: string;
+  category: IncidentCategory;
+  status: IncidentStatus;
+  description: string;
+  created_at: string;
+  location_zone_name: string | null;
+  has_image: boolean;
+  reaction_count: number;
+  reacted_by_me: boolean;
+  is_own_report: boolean;
+};
+
+export type StudentFeedResponse = {
+  total: number;
+  items: StudentFeedItem[];
+};
+
+export type CommunityFeedResponse = {
+  total: number;
+  items: CommunityFeedItem[];
+};
+
+export type ReactionState = {
+  reaction_count: number;
+  reacted_by_me: boolean;
+};
+
 export type IncidentDetail = {
   id: string;
   category: IncidentCategory;
@@ -134,6 +174,18 @@ export type AdminUserListResponse = {
   items: AdminUser[];
 };
 
+export type AIProviderStatus = {
+  api_key_configured: boolean;
+  model: string;
+  state: string;
+  fallback_count_24h: number;
+  quota_exhausted_detected: boolean;
+  latest_fallback_reason: string | null;
+  latest_source: string | null;
+  failed_classifications_24h: number;
+  latest_failure_reason: string | null;
+};
+
 export type SystemStatusResponse = {
   api_ok: boolean;
   server_time: string;
@@ -149,16 +201,14 @@ export type SystemStatusResponse = {
     pending_jobs: number;
     processing_jobs: number;
   }>;
-  gemini: {
-    api_key_configured: boolean;
-    model: string;
-    state: string;
-    fallback_count_24h: number;
-    quota_exhausted_detected: boolean;
-    latest_fallback_reason: string | null;
-    latest_source: string | null;
-  };
+  ai: AIProviderStatus;
   notes: string[];
+};
+
+type SystemStatusWireResponse = Omit<SystemStatusResponse, "ai"> & {
+  ai?: AIProviderStatus;
+  // Compatibility with a backend process that has not been restarted yet.
+  gemini?: AIProviderStatus;
 };
 
 export type StaffMember = {
@@ -269,19 +319,6 @@ export type IncidentLocationResolveResponse = {
   message: string;
 };
 
-export type ReportImageAnalysis = {
-  is_appropriate: boolean;
-  is_incident: boolean;
-  reason: string | null;
-  suggested_title: string | null;
-  predicted_category: IncidentCategory;
-  priority_label: PriorityLevel;
-  priority_score: string;
-  confidence: string;
-  assigned_to: string | null;
-  source: string;
-};
-
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export class ApiHttpError extends Error {
@@ -309,8 +346,8 @@ async function parseError(response: Response): Promise<never> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  // All authenticated traffic uses the HttpOnly session cookie. Never send bearer
-  // credentials even if legacy callers still pass a token argument.
+  // All authenticated traffic uses the HttpOnly session cookie. Kept as defense
+  // in depth so no caller can reintroduce bearer credentials.
   headers.delete("Authorization");
   if (!["GET", "HEAD", "OPTIONS"].includes((init?.method ?? "GET").toUpperCase())) {
     const csrf = document.cookie
@@ -374,7 +411,6 @@ export async function logout(): Promise<{ message: string }> {
 }
 
 export async function createReport(
-  token: string | null,
   formData: FormData,
   turnstileToken?: string | null,
 ): Promise<{
@@ -384,9 +420,6 @@ export async function createReport(
   ai_status: string;
 }> {
   const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
   if (turnstileToken) headers["X-Turnstile-Token"] = turnstileToken;
 
   return request("/reports", {
@@ -396,25 +429,7 @@ export async function createReport(
   });
 }
 
-export async function analyzeReportImage(
-  token: string | null,
-  formData: FormData,
-  turnstileToken?: string | null,
-): Promise<ReportImageAnalysis> {
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  if (turnstileToken) headers["X-Turnstile-Token"] = turnstileToken;
-  return request<ReportImageAnalysis>("/reports/analyze-image", {
-    method: "POST",
-    headers,
-    body: formData,
-  });
-}
-
 export async function listIncidents(
-  token: string,
   params: {
     status_filter?: IncidentStatus;
     category?: IncidentCategory;
@@ -434,23 +449,74 @@ export async function listIncidents(
   query.set("limit", String(params.limit ?? 20));
   query.set("offset", String(params.offset ?? 0));
 
-  return request<IncidentListResponse>(`/incidents?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  return request<IncidentListResponse>(`/incidents?${query.toString()}`);
+}
+
+type FeedFilters = {
+  status_filter?: IncidentStatus;
+  category?: IncidentCategory;
+  limit?: number;
+  offset?: number;
+};
+
+function feedQuery(params: FeedFilters): string {
+  const query = new URLSearchParams();
+  if (params.status_filter) query.set("status_filter", params.status_filter);
+  if (params.category) query.set("category", params.category);
+  query.set("limit", String(params.limit ?? 12));
+  query.set("offset", String(params.offset ?? 0));
+  return query.toString();
+}
+
+export async function listMyIncidentFeed(params: FeedFilters = {}): Promise<StudentFeedResponse> {
+  return request<StudentFeedResponse>(`/incidents/mine/feed?${feedQuery(params)}`);
+}
+
+export async function listAdminIncidentFeed(params: FeedFilters = {}): Promise<StudentFeedResponse> {
+  return request<StudentFeedResponse>(`/incidents/admin/feed?${feedQuery(params)}`);
+}
+
+export async function listCommunityFeed(params: FeedFilters = {}): Promise<CommunityFeedResponse> {
+  return request<CommunityFeedResponse>(`/incidents/community?${feedQuery(params)}`);
+}
+
+async function getPrivateImageObjectUrl(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!response.ok) return parseError(response);
+  return URL.createObjectURL(await response.blob());
+}
+
+export async function getMyIncidentFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/mine/${incidentId}/image`);
+}
+
+export async function getAdminIncidentFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/admin/${incidentId}/image`);
+}
+
+export async function getCommunityFeedImageObjectUrl(incidentId: string): Promise<string> {
+  return getPrivateImageObjectUrl(`/incidents/community/${incidentId}/image`);
+}
+
+export async function addCommunityReaction(incidentId: string): Promise<ReactionState> {
+  return request<ReactionState>(`/incidents/community/${incidentId}/reaction`, { method: "POST" });
+}
+
+export async function removeCommunityReaction(incidentId: string): Promise<ReactionState> {
+  return request<ReactionState>(`/incidents/community/${incidentId}/reaction`, { method: "DELETE" });
+}
+
+export async function revokeCommunityConsent(incidentId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/incidents/${incidentId}/community-consent`, {
+    method: "PATCH",
   });
 }
 
-export async function getIncidentDetail(token: string, incidentId: string): Promise<IncidentDetail> {
-  return request<IncidentDetail>(`/incidents/${incidentId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export async function getIncidentDetail(incidentId: string): Promise<IncidentDetail> {
+  return request<IncidentDetail>(`/incidents/${incidentId}`);
 }
 
 export async function getEvidenceObjectUrl(
-  token: string,
   incidentId: string,
   evidenceId: string,
 ): Promise<string> {
@@ -467,16 +533,16 @@ export async function getEvidenceObjectUrl(
   return URL.createObjectURL(blob);
 }
 
-export async function getSystemStatus(token: string): Promise<SystemStatusResponse> {
-  return request<SystemStatusResponse>("/admin/system-status", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export async function getSystemStatus(): Promise<SystemStatusResponse> {
+  const payload = await request<SystemStatusWireResponse>("/admin/system-status");
+  const ai = payload.ai ?? payload.gemini;
+  if (!ai) {
+    throw new Error("La API devolvió un estado IA incompleto; reinicia el backend.");
+  }
+  return { ...payload, ai };
 }
 
 export async function listAdminUsers(
-  token: string,
   params?: {
     search?: string;
     role?: UserRole;
@@ -492,15 +558,10 @@ export async function listAdminUsers(
   query.set("limit", String(params?.limit ?? 100));
   query.set("offset", String(params?.offset ?? 0));
 
-  return request<AdminUserListResponse>(`/admin/users?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return request<AdminUserListResponse>(`/admin/users?${query.toString()}`);
 }
 
 export async function createAdminUser(
-  token: string,
   payload: {
     campus_id: string;
     full_name: string;
@@ -516,7 +577,6 @@ export async function createAdminUser(
   return request<AdminUser>("/admin/users", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -524,7 +584,6 @@ export async function createAdminUser(
 }
 
 export async function updateAdminUser(
-  token: string,
   userId: string,
   payload: {
     full_name?: string;
@@ -541,33 +600,25 @@ export async function updateAdminUser(
   return request<AdminUser>(`/admin/users/${userId}`, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
   });
 }
 
-export async function banAdminUser(token: string, userId: string): Promise<AdminUser> {
+export async function banAdminUser(userId: string): Promise<AdminUser> {
   return request<AdminUser>(`/admin/users/${userId}/ban`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }
 
-export async function unbanAdminUser(token: string, userId: string): Promise<AdminUser> {
+export async function unbanAdminUser(userId: string): Promise<AdminUser> {
   return request<AdminUser>(`/admin/users/${userId}/unban`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }
 
 export async function listStaff(
-  token: string,
   params?: {
     search?: string;
     category?: IncidentCategory;
@@ -583,15 +634,10 @@ export async function listStaff(
   query.set("limit", String(params?.limit ?? 100));
   query.set("offset", String(params?.offset ?? 0));
 
-  return request<StaffListResponse>(`/admin/staff?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return request<StaffListResponse>(`/admin/staff?${query.toString()}`);
 }
 
 export async function createStaff(
-  token: string,
   payload: {
     full_name: string;
     area_name: string;
@@ -605,7 +651,6 @@ export async function createStaff(
   return request<StaffMember>("/admin/staff", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -613,7 +658,6 @@ export async function createStaff(
 }
 
 export async function updateStaff(
-  token: string,
   staffId: string,
   payload: {
     full_name?: string;
@@ -628,7 +672,6 @@ export async function updateStaff(
   return request<StaffMember>(`/admin/staff/${staffId}`, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -636,7 +679,6 @@ export async function updateStaff(
 }
 
 export async function listStaffAssignments(
-  token: string,
   staffId: string,
   params?: {
     status_filter?: AssignmentStatus;
@@ -651,15 +693,11 @@ export async function listStaffAssignments(
   return request<StaffAssignmentListResponse>(
     `/admin/staff/${staffId}/assignments?${query.toString()}`,
     {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
     },
   );
 }
 
 export async function listMyStaffAssignments(
-  token: string,
   params?: {
     status_filter?: AssignmentStatus;
     limit?: number;
@@ -671,27 +709,18 @@ export async function listMyStaffAssignments(
   query.set("limit", String(params?.limit ?? 100));
   query.set("offset", String(params?.offset ?? 0));
 
-  return request<StaffOwnAssignmentListResponse>(`/staff/my-assignments?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return request<StaffOwnAssignmentListResponse>(`/staff/my-assignments?${query.toString()}`);
 }
 
 export async function completeMyStaffAssignment(
-  token: string,
   assignmentId: string,
 ): Promise<StaffCompleteAssignmentResponse> {
   return request<StaffCompleteAssignmentResponse>(`/staff/assignments/${assignmentId}/complete`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }
 
 export async function assignIncidentToStaff(
-  token: string,
   incidentId: string,
   payload: {
     responsible_id: string;
@@ -702,7 +731,6 @@ export async function assignIncidentToStaff(
   return request<AssignmentActionResponse>(`/admin/incidents/${incidentId}/assign`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -710,7 +738,6 @@ export async function assignIncidentToStaff(
 }
 
 export async function updateAssignmentStatus(
-  token: string,
   assignmentId: string,
   payload: {
     status: AssignmentStatus;
@@ -720,7 +747,6 @@ export async function updateAssignmentStatus(
   return request<AssignmentActionResponse>(`/admin/assignments/${assignmentId}`, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -728,7 +754,6 @@ export async function updateAssignmentStatus(
 }
 
 export async function updateIncidentStatusAdmin(
-  token: string,
   incidentId: string,
   payload: {
     status: IncidentStatus;
@@ -737,7 +762,6 @@ export async function updateIncidentStatusAdmin(
   return request<IncidentStatusUpdateResponse>(`/admin/incidents/${incidentId}/status`, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -745,7 +769,6 @@ export async function updateIncidentStatusAdmin(
 }
 
 export async function listCampusZones(
-  token: string,
   params?: {
     search?: string;
     active?: boolean;
@@ -759,15 +782,10 @@ export async function listCampusZones(
   query.set("limit", String(params?.limit ?? 200));
   query.set("offset", String(params?.offset ?? 0));
 
-  return request<CampusZoneListResponse>(`/admin/campus-zones?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return request<CampusZoneListResponse>(`/admin/campus-zones?${query.toString()}`);
 }
 
 export async function createCampusZone(
-  token: string,
   payload: {
     name: string;
     code?: string | null;
@@ -779,7 +797,6 @@ export async function createCampusZone(
   return request<CampusZone>("/admin/campus-zones", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -787,7 +804,6 @@ export async function createCampusZone(
 }
 
 export async function updateCampusZone(
-  token: string,
   zoneId: string,
   payload: {
     name?: string;
@@ -800,7 +816,6 @@ export async function updateCampusZone(
   return request<CampusZone>(`/admin/campus-zones/${zoneId}`, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -808,13 +823,9 @@ export async function updateCampusZone(
 }
 
 export async function resolveIncidentLocationZone(
-  token: string,
   incidentId: string,
 ): Promise<IncidentLocationResolveResponse> {
   return request<IncidentLocationResolveResponse>(`/admin/incidents/${incidentId}/resolve-location`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }

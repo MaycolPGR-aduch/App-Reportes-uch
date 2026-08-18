@@ -42,6 +42,8 @@ Desde `backend/`:
    `alembic -c alembic.ini stamp 20260318_01` seguido de
    `alembic -c alembic.ini upgrade head`.
    En una base nueva basta `alembic -c alembic.ini upgrade head`.
+   Si la base ya está en `20260721_01`, basta `alembic -c alembic.ini upgrade head` para aplicar
+   `20260730_01` y `20260804_01`, usando el propietario de las tablas para la migración.
 3. Despliega el servicio definido en `render.yaml`; con Render Disk, la API y los
    workers se ejecutan en el mismo grupo para compartir las evidencias privadas.
    Render debe comprobar `/health/ready` antes de enrutar tráfico. Si se requiere
@@ -50,16 +52,18 @@ Desde `backend/`:
 Las sesiones son cookies HttpOnly, no tokens Bearer. El frontend debe configurar
 `NEXT_PUBLIC_API_BASE_URL` y enviar solicitudes con credenciales incluidas.
 
-## Configuracion IA (Gemini)
+## Configuración IA (TokenRouter)
 
-- Proveedor IA MVP: Gemini Developer API.
-- Modelo recomendado para este caso (clasificacion rapida de texto corto): `gemini-2.5-flash`.
+- Proveedor: TokenRouter, mediante su API compatible con OpenAI. El código no depende de una familia de modelos concreta.
+- Cadena inicial de VLMs: `moonshotai/kimi-k3-free` →
+  `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` → `qwen/qwen3.5-9b`.
 - Variables clave en `.env`:
-  - `GEMINI_API_KEY`
-  - `GEMINI_MODEL` (default `gemini-2.5-flash`)
-  - `GEMINI_PROMPT_VERSION`
-  - `GEMINI_THINKING_BUDGET` (default `0` para menor latencia/costo en clasificacion)
-- Si falta `GEMINI_API_KEY`, el sistema usa clasificacion heuristica local para no bloquear el flujo.
+  - `AI_TOKENROUTER_API_KEY`
+  - `AI_IMAGE_PRIMARY_MODEL`
+  - `AI_IMAGE_FALLBACK_MODELS` (lista separada por comas y en orden de uso)
+  - `AI_PROMPT_VERSION`, `AI_REQUEST_TIMEOUT_SECONDS`, `AI_MAX_OUTPUT_TOKENS`
+- La foto se analiza una sola vez, después de crear el reporte. El resultado se guarda en `ai_metrics`; los paneles nunca vuelven a llamar al proveedor.
+- Si todos los modelos fallan o devuelven JSON inválido, el job se reintenta y finalmente queda en `IN_REVIEW`; no hay fallback heurístico que apruebe, publique o autoasigne una incidencia.
 - `AUTO_ASSIGN_ENABLED=false` (default): desactiva auto-asignación IA para operar con asignación manual desde dashboard admin.
 
 ## Configuracion correo (Brevo API)
@@ -81,9 +85,14 @@ Si no ejecutas workers, los jobs quedan en `PENDING` y no aparecerán métricas 
 
 ## Diagnóstico IA rápido
 
-Para validar pipeline IA (DB + jobs + métricas + configuración Gemini):
+Para validar pipeline IA (DB + jobs + métricas + configuración TokenRouter):
 
 `python check_ai_pipeline.py`
+
+Para probar disponibilidad real, entrada de imagen y JSON de cada modelo configurado
+(hace una solicitud no sensible por modelo):
+
+`python check_ai_models.py`
 
 ## Endpoints MVP
 
@@ -96,9 +105,13 @@ Para validar pipeline IA (DB + jobs + métricas + configuración Gemini):
 - `POST /api/v1/auth/logout`
 - `POST /api/v1/auth/verify-email`
 - `POST /api/v1/auth/password-reset`
-- `POST /api/v1/reports` (acepta modo anonimo sin token o modo autenticado con Bearer)
+- `POST /api/v1/reports` (sesión por cookie; `community_consent=true` solo para estudiantes autenticados)
 - `GET /api/v1/incidents` (ADMIN)
 - `GET /api/v1/incidents/mine` (STUDENT)
+- `GET /api/v1/incidents/mine/feed` y `GET /api/v1/incidents/mine/{incident_id}/image` (STUDENT)
+- `GET /api/v1/incidents/community` y `GET /api/v1/incidents/community/{incident_id}/image` (STUDENT)
+- `POST`/`DELETE /api/v1/incidents/community/{incident_id}/reaction` (STUDENT)
+- `PATCH /api/v1/incidents/{incident_id}/community-consent` (STUDENT, retira publicación)
 - `GET /api/v1/incidents/{incident_id}`
 - `GET /api/v1/incidents/{incident_id}/evidences/{evidence_id}` (descarga evidencia bajo demanda, requiere auth)
 - `GET /api/v1/admin/staff` (ADMIN)
@@ -125,6 +138,13 @@ Si ejecutaste `sql/seed_test_users.sql`, puedes iniciar sesion con:
 Para crear usuarios via API (solo ADMIN):
 
 `POST /api/v1/auth/users` usando la cookie de sesión ADMIN y el encabezado CSRF.
+
+## Feed Comunidad
+
+Los reportes existentes y anónimos permanecen privados. Un estudiante puede autorizar la publicación
+anónima al crear un reporte; el worker IA solo lo muestra si la imagen y la incidencia pasan la
+validación. La persona autora puede retirar el consentimiento desde su feed, y las reacciones no
+exponen identidades.
 
 ## Troubleshooting CORS
 

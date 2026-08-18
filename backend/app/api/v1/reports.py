@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_current_admin, get_current_user, get_optional_user
@@ -23,6 +24,7 @@ from app.models.enums import (
 )
 from app.models.evidence import IncidentEvidence
 from app.models.assignment import IncidentAssignment
+from app.models.community_reaction import CommunityReaction
 from app.models.incident import Incident
 from app.models.location import IncidentLocation
 from app.models.user import User
@@ -33,12 +35,16 @@ from app.schemas.incident import (
     IncidentDetail,
     IncidentListItem,
     IncidentListResponse,
+    CommunityFeedItem,
+    CommunityFeedResponse,
     LocationOut,
     NotificationOut,
+    ReactionStateResponse,
+    StudentFeedItem,
+    StudentFeedResponse,
 )
+from app.schemas.auth import MessageResponse
 from app.schemas.report import ReportCreateResponse, ReportValidation
-from app.schemas.report import ReportImageAnalysisResponse
-from app.services.ai import classify_incident
 from app.services.jobs import enqueue_job
 from app.services.location_resolver import resolve_campus_zone
 from app.services.sanitizer import sanitize_description, sanitize_title
@@ -81,6 +87,7 @@ def _build_incident_detail(incident: Incident, *, include_sensitive: bool) -> In
     ai_metrics = [
         AIMetricOut(
             id=m.id,
+            provider=m.provider,
             model_name=m.model_name,
             prompt_version=m.prompt_version,
             predicted_category=m.predicted_category,
@@ -153,6 +160,7 @@ async def create_report(
     title: Annotated[str | None, Form()] = None,
     accuracy_m: Annotated[float | None, Form()] = None,
     location_reference: Annotated[str | None, Form()] = None,
+    community_consent: bool = Form(default=False),
     trace_id: str | None = Header(default=None, alias="X-Trace-Id"),
     turnstile_token: str | None = Header(default=None, alias="X-Turnstile-Token"),
     request: Request = None,
@@ -160,6 +168,14 @@ async def create_report(
     current_user: User | None = Depends(get_optional_user),
 ) -> ReportCreateResponse:
     settings = get_settings()
+
+    if community_consent and (
+        current_user is None or current_user.role != UserRole.STUDENT
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Community sharing is available only to authenticated students",
+        )
 
     if current_user is None:
         enforce_rate_limit(
@@ -225,6 +241,8 @@ async def create_report(
         priority=PriorityLevel.MEDIUM,
         trace_id=(trace_id or "")[:64] or None,
         created_by=current_user.campus_id if current_user else "anonymous",
+        community_consent=community_consent,
+        is_community_visible=False,
     )
     db.add(incident)
     db.flush()
@@ -288,76 +306,13 @@ async def create_report(
 
 @router.post(
     "/reports/analyze-image",
-    response_model=ReportImageAnalysisResponse,
-    status_code=status.HTTP_200_OK,
 )
-async def analyze_report_image(
-    photo: UploadFile = File(...),
-    description: Annotated[str | None, Form()] = None,
-    category: Annotated[IncidentCategory, Form()] = IncidentCategory.INFRASTRUCTURE,
-    request: Request = None,
-    turnstile_token: str | None = Header(default=None, alias="X-Turnstile-Token"),
-    db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
-) -> ReportImageAnalysisResponse:
-    settings = get_settings()
-    if current_user is None:
-        enforce_rate_limit(
-            db,
-            scope="image_analysis",
-            identifier=client_identifier(request),
-            limit=settings.rate_limit_image_analysis,
-            window_seconds=3600,
-        )
-        verify_turnstile(turnstile_token, request)
-
-    file_bytes = await photo.read()
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="Photo file is empty")
-
-    max_size_bytes = settings.max_image_size_mb * 1024 * 1024
-    if len(file_bytes) > max_size_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Photo exceeds {settings.max_image_size_mb}MB limit",
-        )
-
-    try:
-        file_bytes, normalized_mime = normalize_image(
-            file_bytes,
-            declared_mime=photo.content_type,
-            max_pixels=settings.max_image_pixels,
-        )
-    except InvalidImageError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    text = sanitize_description(description or "")
-    result = classify_incident(
-        description=text or "Sin descripcion",
-        user_category=category,
-        evidence_metadata={
-            "precheck_mode": True,
-            "file_name": photo.filename,
-        },
-        image_bytes=file_bytes,
-        image_mime_type=normalized_mime,
-    )
-
-    source = "heuristic"
-    if result.raw_response and isinstance(result.raw_response.get("source"), str):
-        source = str(result.raw_response["source"])
-
-    return ReportImageAnalysisResponse(
-        is_appropriate=result.is_appropriate,
-        is_incident=result.is_incident,
-        reason=result.reason,
-        suggested_title=result.suggested_title,
-        predicted_category=result.predicted_category,
-        priority_label=result.priority_label,
-        priority_score=result.priority_score,
-        confidence=result.confidence,
-        assigned_to=result.assigned_to,
-        source=source,
+async def analyze_report_image() -> None:
+    # Kept as an explicit response for older frontends. Running it before report
+    # creation used to call a provider twice and leaked spend on abandoned forms.
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Image analysis runs once after the report is created",
     )
 
 
@@ -444,6 +399,326 @@ def list_my_incidents(
             ) for inc in incidents
         ],
     )
+
+
+def _require_student(current_user: User) -> User:
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Student role required")
+    return current_user
+
+
+def _safe_feed_limit_offset(limit: int, offset: int) -> tuple[int, int]:
+    return min(max(limit, 1), 30), max(offset, 0)
+
+
+def _feed_image_response(incident: Incident) -> FileResponse:
+    evidence = next(iter(sorted(incident.evidences, key=lambda item: item.created_at)), None)
+    if evidence is None:
+        raise HTTPException(status_code=404, detail="Feed image not found")
+    settings = get_settings()
+    evidence_path = (settings.local_storage_path.parent / evidence.storage_path).resolve()
+    base_data_path = settings.local_storage_path.parent.resolve()
+    if base_data_path not in evidence_path.parents and evidence_path != base_data_path:
+        raise HTTPException(status_code=400, detail="Invalid evidence path")
+    if not evidence_path.exists():
+        raise HTTPException(status_code=404, detail="Evidence file missing on disk")
+    return FileResponse(path=evidence_path, media_type=evidence.mime_type)
+
+
+@router.get("/incidents/mine/feed", response_model=StudentFeedResponse)
+def list_my_incident_feed(
+    status_filter: IncidentStatus | None = None,
+    category: IncidentCategory | None = None,
+    limit: int = 12,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StudentFeedResponse:
+    user = _require_student(current_user)
+    safe_limit, safe_offset = _safe_feed_limit_offset(limit, offset)
+    query = db.query(Incident).filter(Incident.reporter_id == user.id)
+    if status_filter:
+        query = query.filter(Incident.status == status_filter)
+    if category:
+        query = query.filter(Incident.category == category)
+    total = query.with_entities(func.count(Incident.id)).scalar() or 0
+    incidents = (
+        query.options(selectinload(Incident.location), selectinload(Incident.evidences))
+        .order_by(Incident.created_at.desc())
+        .offset(safe_offset)
+        .limit(safe_limit)
+        .all()
+    )
+    return StudentFeedResponse(
+        total=total,
+        items=[
+            StudentFeedItem(
+                id=incident.id,
+                category=incident.category,
+                status=incident.status,
+                description=incident.description,
+                created_at=incident.created_at,
+                location_zone_name=incident.location.resolved_zone_name if incident.location else None,
+                has_image=bool(incident.evidences),
+                community_consent=incident.community_consent,
+                is_community_visible=incident.is_community_visible,
+            )
+            for incident in incidents
+        ],
+    )
+
+
+@router.get("/incidents/admin/feed", response_model=StudentFeedResponse)
+def list_admin_incident_feed(
+    status_filter: IncidentStatus | None = None,
+    category: IncidentCategory | None = None,
+    limit: int = 12,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> StudentFeedResponse:
+    """All incidents in the compact social layout, exclusively for admins."""
+    safe_limit, safe_offset = _safe_feed_limit_offset(limit, offset)
+    query = db.query(Incident)
+    if status_filter:
+        query = query.filter(Incident.status == status_filter)
+    if category:
+        query = query.filter(Incident.category == category)
+    total = query.with_entities(func.count(Incident.id)).scalar() or 0
+    incidents = (
+        query.options(selectinload(Incident.location), selectinload(Incident.evidences))
+        .order_by(Incident.created_at.desc())
+        .offset(safe_offset)
+        .limit(safe_limit)
+        .all()
+    )
+    return StudentFeedResponse(
+        total=total,
+        items=[
+            StudentFeedItem(
+                id=incident.id,
+                category=incident.category,
+                status=incident.status,
+                description=incident.description,
+                created_at=incident.created_at,
+                location_zone_name=incident.location.resolved_zone_name if incident.location else None,
+                has_image=bool(incident.evidences),
+                community_consent=incident.community_consent,
+                is_community_visible=incident.is_community_visible,
+            )
+            for incident in incidents
+        ],
+    )
+
+
+@router.get("/incidents/mine/{incident_id}/image")
+def get_my_incident_feed_image(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    user = _require_student(current_user)
+    incident = (
+        db.query(Incident)
+        .options(selectinload(Incident.evidences))
+        .filter(Incident.id == incident_id, Incident.reporter_id == user.id)
+        .first()
+    )
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return _feed_image_response(incident)
+
+
+@router.get("/incidents/admin/{incident_id}/image")
+def get_admin_incident_feed_image(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> FileResponse:
+    incident = (
+        db.query(Incident)
+        .options(selectinload(Incident.evidences))
+        .filter(Incident.id == incident_id)
+        .first()
+    )
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return _feed_image_response(incident)
+
+
+@router.get("/incidents/community", response_model=CommunityFeedResponse)
+def list_community_feed(
+    status_filter: IncidentStatus | None = None,
+    category: IncidentCategory | None = None,
+    limit: int = 12,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CommunityFeedResponse:
+    user = _require_student(current_user)
+    safe_limit, safe_offset = _safe_feed_limit_offset(limit, offset)
+    query = db.query(Incident).filter(
+        Incident.community_consent.is_(True),
+        Incident.is_community_visible.is_(True),
+        Incident.status != IncidentStatus.REJECTED,
+    )
+    if status_filter:
+        query = query.filter(Incident.status == status_filter)
+    if category:
+        query = query.filter(Incident.category == category)
+    total = query.with_entities(func.count(Incident.id)).scalar() or 0
+    incidents = (
+        query.options(selectinload(Incident.location), selectinload(Incident.evidences))
+        .order_by(Incident.created_at.desc())
+        .offset(safe_offset)
+        .limit(safe_limit)
+        .all()
+    )
+    incident_ids = [incident.id for incident in incidents]
+    reaction_counts: dict[UUID, int] = {}
+    reacted_ids: set[UUID] = set()
+    if incident_ids:
+        reaction_counts = dict(
+            db.query(CommunityReaction.incident_id, func.count(CommunityReaction.id))
+            .filter(CommunityReaction.incident_id.in_(incident_ids))
+            .group_by(CommunityReaction.incident_id)
+            .all()
+        )
+        reacted_ids = {
+            incident_id
+            for (incident_id,) in db.query(CommunityReaction.incident_id)
+            .filter(
+                CommunityReaction.incident_id.in_(incident_ids),
+                CommunityReaction.user_id == user.id,
+            )
+            .all()
+        }
+    return CommunityFeedResponse(
+        total=total,
+        items=[
+            CommunityFeedItem(
+                id=incident.id,
+                category=incident.category,
+                status=incident.status,
+                description=incident.description,
+                created_at=incident.created_at,
+                location_zone_name=incident.location.resolved_zone_name if incident.location else None,
+                has_image=bool(incident.evidences),
+                reaction_count=reaction_counts.get(incident.id, 0),
+                reacted_by_me=incident.id in reacted_ids,
+                is_own_report=incident.reporter_id == user.id,
+            )
+            for incident in incidents
+        ],
+    )
+
+
+def _get_visible_community_incident(db: Session, incident_id: UUID) -> Incident:
+    incident = (
+        db.query(Incident)
+        .options(selectinload(Incident.evidences))
+        .filter(
+            Incident.id == incident_id,
+            Incident.community_consent.is_(True),
+            Incident.is_community_visible.is_(True),
+            Incident.status != IncidentStatus.REJECTED,
+        )
+        .first()
+    )
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Community incident not found")
+    return incident
+
+
+def _reaction_state(db: Session, *, incident_id: UUID, user_id: UUID) -> ReactionStateResponse:
+    reaction_count = (
+        db.query(func.count(CommunityReaction.id))
+        .filter(CommunityReaction.incident_id == incident_id)
+        .scalar()
+        or 0
+    )
+    reacted_by_me = (
+        db.query(CommunityReaction.id)
+        .filter(
+            CommunityReaction.incident_id == incident_id,
+            CommunityReaction.user_id == user_id,
+        )
+        .first()
+        is not None
+    )
+    return ReactionStateResponse(reaction_count=reaction_count, reacted_by_me=reacted_by_me)
+
+
+@router.get("/incidents/community/{incident_id}/image")
+def get_community_feed_image(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    _require_student(current_user)
+    return _feed_image_response(_get_visible_community_incident(db, incident_id))
+
+
+@router.post("/incidents/community/{incident_id}/reaction", response_model=ReactionStateResponse)
+def add_community_reaction(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReactionStateResponse:
+    user = _require_student(current_user)
+    incident = _get_visible_community_incident(db, incident_id)
+    if incident.reporter_id == user.id:
+        raise HTTPException(status_code=403, detail="You cannot react to your own incident")
+    exists = (
+        db.query(CommunityReaction.id)
+        .filter(CommunityReaction.incident_id == incident.id, CommunityReaction.user_id == user.id)
+        .first()
+    )
+    if exists is None:
+        db.add(CommunityReaction(incident_id=incident.id, user_id=user.id))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+    return _reaction_state(db, incident_id=incident.id, user_id=user.id)
+
+
+@router.delete("/incidents/community/{incident_id}/reaction", response_model=ReactionStateResponse)
+def remove_community_reaction(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReactionStateResponse:
+    user = _require_student(current_user)
+    incident = _get_visible_community_incident(db, incident_id)
+    if incident.reporter_id == user.id:
+        raise HTTPException(status_code=403, detail="You cannot react to your own incident")
+    db.query(CommunityReaction).filter(
+        CommunityReaction.incident_id == incident.id,
+        CommunityReaction.user_id == user.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return _reaction_state(db, incident_id=incident.id, user_id=user.id)
+
+
+@router.patch("/incidents/{incident_id}/community-consent", response_model=MessageResponse)
+def revoke_community_consent(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    user = _require_student(current_user)
+    incident = (
+        db.query(Incident)
+        .filter(Incident.id == incident_id, Incident.reporter_id == user.id)
+        .first()
+    )
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    incident.community_consent = False
+    incident.is_community_visible = False
+    db.commit()
+    return MessageResponse(message="Community sharing disabled")
 
 
 def _can_access_incident(db: Session, incident: Incident, user: User) -> bool:

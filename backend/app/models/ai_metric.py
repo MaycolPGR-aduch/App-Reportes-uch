@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Numeric, String, Text
+from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 class AIMetric(Base, TimestampMixin):
     __tablename__ = "ai_metrics"
+    __table_args__ = (UniqueConstraint("incident_id", name="uq_ai_metrics_incident_id"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
@@ -26,6 +27,7 @@ class AIMetric(Base, TimestampMixin):
     incident_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False
     )
+    provider: Mapped[str] = mapped_column(String(40), nullable=False, default="tokenrouter")
     model_name: Mapped[str] = mapped_column(String(80), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(40), nullable=False)
     predicted_category: Mapped[IncidentCategory] = mapped_column(
@@ -41,4 +43,3 @@ class AIMetric(Base, TimestampMixin):
     raw_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     incident: Mapped["Incident"] = relationship(back_populates="ai_metrics")
-

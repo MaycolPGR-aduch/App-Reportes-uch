@@ -40,7 +40,7 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await listIncidents(token, {
+      const response = await listIncidents({
         status_filter: statusFilter || undefined,
         category: categoryFilter || undefined,
         priority: priorityFilter || undefined,
@@ -75,7 +75,7 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
       }
       setDetailLoading(true);
       try {
-        const detail = await getIncidentDetail(token, selectedId);
+        const detail = await getIncidentDetail(selectedId);
         setSelectedDetail(detail);
       } catch {
         setSelectedDetail(null);
@@ -99,7 +99,7 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
     setEvidenceError(null);
     setEvidenceLoadingId(evidenceId);
     try {
-      const url = await getEvidenceObjectUrl(token, incidentId, evidenceId);
+      const url = await getEvidenceObjectUrl(incidentId, evidenceId);
       if (evidenceUrl) {
         URL.revokeObjectURL(evidenceUrl);
       }

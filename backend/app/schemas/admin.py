@@ -31,7 +31,7 @@ class JobQueueSummaryItem(BaseModel):
     count: int
 
 
-class GeminiStatusOut(BaseModel):
+class AIProviderStatusOut(BaseModel):
     api_key_configured: bool
     model: str
     state: str
@@ -39,6 +39,8 @@ class GeminiStatusOut(BaseModel):
     quota_exhausted_detected: bool
     latest_fallback_reason: str | None
     latest_source: str | None
+    failed_classifications_24h: int = 0
+    latest_failure_reason: str | None = None
 
 
 class SystemStatusResponse(BaseModel):
@@ -46,7 +48,7 @@ class SystemStatusResponse(BaseModel):
     server_time: datetime
     queue_summary: list[JobQueueSummaryItem]
     workers: list[WorkerStatusOut]
-    gemini: GeminiStatusOut
+    ai: AIProviderStatusOut
     notes: list[str]
 
 

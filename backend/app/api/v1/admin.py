@@ -42,7 +42,7 @@ from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserOut,
     AssignmentActionResponse,
-    GeminiStatusOut,
+    AIProviderStatusOut,
     IncidentStatusUpdateResponse,
     JobQueueSummaryItem,
     ManualAssignIncidentRequest,
@@ -271,6 +271,21 @@ def _zone_out(zone: CampusZone) -> CampusZoneOut:
     )
 
 
+QUOTA_MARKERS = ("429", "quota", "rate limit", "rate_limit", "insufficient", "recharge", "billing")
+
+
+def _looks_quota_exhausted(error_text: str | None) -> bool:
+    """Providers signal an exhausted balance with more than HTTP 429.
+
+    TokenRouter answers `403 Your account quota is running low ($0.00)`, so
+    matching only on the 429 status code missed a depleted account entirely.
+    """
+    if not error_text:
+        return False
+    lowered = error_text.lower()
+    return any(marker in lowered for marker in QUOTA_MARKERS)
+
+
 def _compute_worker_status(
     *,
     db: Session,
@@ -372,27 +387,81 @@ def get_system_status(
             source = raw.get("source")
             if latest_source is None and isinstance(source, str):
                 latest_source = source
-            fallback_reason = raw.get("fallback_reason")
-            if isinstance(fallback_reason, str) and fallback_reason.strip():
+            attempts = raw.get("attempts_before_success")
+            if isinstance(attempts, list) and attempts:
                 fallback_count_24h += 1
                 if latest_fallback_reason is None:
-                    latest_fallback_reason = fallback_reason[:500]
-                if "resource_exhausted" in fallback_reason.lower() or "429" in fallback_reason:
+                    latest_fallback_reason = str(attempts[0].get("error", "Unknown model failure"))[:500]
+                if any(
+                    _looks_quota_exhausted(str(item.get("error", "")))
+                    for item in attempts
+                    if isinstance(item, dict)
+                ):
                     quota_exhausted_detected = True
 
-    gemini_state = "OK"
-    if not settings.gemini_api_key:
-        gemini_state = "MISSING_API_KEY"
+    # A total provider outage writes no AIMetric at all -- classify_incident
+    # raises before one exists -- so the metrics above can only reveal partial
+    # failures. Read the job queue as well, which is the only trace a fully
+    # failed classification leaves behind.
+    failed_jobs_24h = (
+        db.query(Job)
+        .filter(
+            Job.type == JobType.CLASSIFY_INCIDENT,
+            Job.status == JobStatus.FAILED,
+            Job.updated_at >= window_24h,
+        )
+        .order_by(Job.updated_at.desc())
+        .all()
+    )
+    retrying_jobs_24h = (
+        db.query(func.count(Job.id))
+        .filter(
+            Job.type == JobType.CLASSIFY_INCIDENT,
+            Job.status == JobStatus.PENDING,
+            Job.attempts > 0,
+            Job.last_error.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+    failed_classifications_24h = len(failed_jobs_24h)
+    latest_failure_reason: str | None = None
+    if failed_jobs_24h and failed_jobs_24h[0].last_error:
+        latest_failure_reason = failed_jobs_24h[0].last_error[:500]
+
+    if _looks_quota_exhausted(latest_failure_reason):
+        quota_exhausted_detected = True
+
+    ai_state = "OK"
+    if not settings.ai_tokenrouter_api_key or not settings.ai_image_primary_model:
+        ai_state = "MISSING_CONFIGURATION"
+    elif failed_classifications_24h > 0:
+        # Every configured model failed for at least one incident.
+        ai_state = "FAILING"
+    elif retrying_jobs_24h > 0:
+        ai_state = "RETRYING"
     elif fallback_count_24h > 0:
-        gemini_state = "FALLBACK_ACTIVE"
+        ai_state = "FALLBACK_ACTIVE"
 
     notes: list[str] = []
     if ai_worker.state == "STALE":
         notes.append("AI worker parece inactivo o atrasado.")
     if notification_worker.state == "STALE":
         notes.append("Notification worker parece inactivo o atrasado.")
-    if gemini_state == "FALLBACK_ACTIVE":
-        notes.append("Gemini está en fallback en al menos una ejecución reciente.")
+    if ai_state == "FAILING":
+        notes.append(
+            f"Clasificación IA caída: {failed_classifications_24h} incidencia(s) agotaron "
+            "sus reintentos en 24 h y quedaron en revisión manual, ocultas de la vista "
+            "comunitaria."
+        )
+    if ai_state == "RETRYING":
+        notes.append(
+            f"El router IA está fallando: {retrying_jobs_24h} clasificación(es) en reintento."
+        )
+    if quota_exhausted_detected:
+        notes.append("El proveedor IA reporta cuota agotada o límite de uso alcanzado.")
+    if ai_state == "FALLBACK_ACTIVE":
+        notes.append("El router IA usó un modelo de respaldo en al menos una ejecución reciente.")
     if not settings.auto_assign_enabled:
         notes.append("Auto-asignación IA desactivada: asignación manual activa.")
 
@@ -401,14 +470,16 @@ def get_system_status(
         server_time=now,
         queue_summary=queue_summary,
         workers=[ai_worker, notification_worker],
-        gemini=GeminiStatusOut(
-            api_key_configured=bool(settings.gemini_api_key),
-            model=settings.gemini_model,
-            state=gemini_state,
+        ai=AIProviderStatusOut(
+            api_key_configured=bool(settings.ai_tokenrouter_api_key),
+            model=settings.ai_image_primary_model or "No configurado",
+            state=ai_state,
             fallback_count_24h=fallback_count_24h,
             quota_exhausted_detected=quota_exhausted_detected,
             latest_fallback_reason=latest_fallback_reason,
             latest_source=latest_source,
+            failed_classifications_24h=failed_classifications_24h,
+            latest_failure_reason=latest_failure_reason,
         ),
         notes=notes,
     )

@@ -35,8 +35,9 @@ import {
   updateIncidentStatusAdmin,
 } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
+import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
 
-type TabKey = "INCIDENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
+type TabKey = "INCIDENTS" | "SOCIAL" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
 const ASSIGNMENT_STATUS_OPTIONS: AssignmentStatus[] = ["ASSIGNED", "ACKNOWLEDGED", "COMPLETED"];
@@ -165,7 +166,7 @@ export default function AdminDashboardPage() {
     setSystemLoading(true);
     setSystemError(null);
     try {
-      setSystem(await getSystemStatus(token));
+      setSystem(await getSystemStatus());
     } catch (e) {
       setSystemError(e instanceof Error ? e.message : "No se pudo cargar estado del sistema");
     } finally {
@@ -179,7 +180,7 @@ export default function AdminDashboardPage() {
       setUsersLoading(true);
       setUsersError(null);
       try {
-        const data = await listAdminUsers(token, {
+        const data = await listAdminUsers({
           search: (searchValue ?? "").trim() || undefined,
           limit: 200,
           offset: 0,
@@ -200,7 +201,7 @@ export default function AdminDashboardPage() {
     setStaffLoading(true);
     setStaffError(null);
     try {
-      const data = await listStaff(token, {
+      const data = await listStaff({
         search: staffSearch.trim() || undefined,
         category: staffCategoryFilter || undefined,
         active:
@@ -228,7 +229,7 @@ export default function AdminDashboardPage() {
     try {
       const statusBlocks = await Promise.all(
         ["REPORTED", "IN_REVIEW", "IN_PROGRESS"].map((statusFilter) =>
-          listIncidents(token, {
+          listIncidents({
             status_filter: statusFilter as IncidentStatus,
             limit: 100,
             offset: 0,
@@ -258,7 +259,7 @@ export default function AdminDashboardPage() {
       setStaffAssignmentsLoading(true);
       setStaffError(null);
       try {
-        const data = await listStaffAssignments(token, staffId, { limit: 200, offset: 0 });
+        const data = await listStaffAssignments(staffId, { limit: 200, offset: 0 });
         setStaffAssignments(data.items);
       } catch (e) {
         setStaffError(e instanceof Error ? e.message : "No se pudo cargar asignaciones");
@@ -274,7 +275,7 @@ export default function AdminDashboardPage() {
     setZonesLoading(true);
     setZonesError(null);
     try {
-      const data = await listCampusZones(token, {
+      const data = await listCampusZones({
         search: zoneSearch.trim() || undefined,
         active:
           zoneActiveFilter === "ALL" ? undefined : zoneActiveFilter === "ACTIVE" ? true : false,
@@ -382,7 +383,7 @@ export default function AdminDashboardPage() {
             }
           : {}),
       };
-      await updateAdminUser(token, selectedUser.id, {
+      await updateAdminUser(selectedUser.id, {
         ...payload,
       });
       await Promise.all([fetchUsers(search), fetchStaff()]);
@@ -394,8 +395,8 @@ export default function AdminDashboardPage() {
   const toggleBan = async (user: AdminUser) => {
     if (!token) return;
     try {
-      if (user.status === "ACTIVE") await banAdminUser(token, user.id);
-      else await unbanAdminUser(token, user.id);
+      if (user.status === "ACTIVE") await banAdminUser(user.id);
+      else await unbanAdminUser(user.id);
       await fetchUsers(search);
     } catch (e) {
       setUsersError(e instanceof Error ? e.message : "No se pudo cambiar estado del usuario");
@@ -422,7 +423,7 @@ export default function AdminDashboardPage() {
             }
           : {}),
       };
-      await createAdminUser(token, {
+      await createAdminUser({
         ...payload,
       });
       setNewCampusId("");
@@ -455,7 +456,7 @@ export default function AdminDashboardPage() {
     setAssignLoading(true);
     setStaffError(null);
     try {
-      const response = await assignIncidentToStaff(token, assignIncidentId, {
+      const response = await assignIncidentToStaff(assignIncidentId, {
         responsible_id: assignStaffId,
         notes: assignNotes.trim() || undefined,
         notify: assignNotify,
@@ -481,7 +482,7 @@ export default function AdminDashboardPage() {
     setAssignmentStatusLoadingId(assignmentId);
     setStaffError(null);
     try {
-      const response = await updateAssignmentStatus(token, assignmentId, {
+      const response = await updateAssignmentStatus(assignmentId, {
         status: statusValue,
       });
       setStaffActionMessage(response.message);
@@ -501,7 +502,7 @@ export default function AdminDashboardPage() {
     setIncidentStatusLoading(true);
     setStaffError(null);
     try {
-      const response = await updateIncidentStatusAdmin(token, assignIncidentId, {
+      const response = await updateIncidentStatusAdmin(assignIncidentId, {
         status: manualIncidentStatus,
       });
       setStaffActionMessage(response.message);
@@ -537,7 +538,7 @@ export default function AdminDashboardPage() {
     setZonesError(null);
     try {
       const polygonGeojson = parseZoneGeojson(newZoneGeojson);
-      await createCampusZone(token, {
+      await createCampusZone({
         name: newZoneName.trim(),
         code: newZoneCode.trim() || null,
         priority: Number(newZonePriority),
@@ -561,7 +562,7 @@ export default function AdminDashboardPage() {
     setZonesError(null);
     try {
       const polygonGeojson = parseZoneGeojson(editZoneGeojson);
-      await updateCampusZone(token, selectedZone.id, {
+      await updateCampusZone(selectedZone.id, {
         name: editZoneName.trim(),
         code: editZoneCode.trim() || null,
         priority: Number(editZonePriority),
@@ -642,6 +643,14 @@ export default function AdminDashboardPage() {
             Incidencias
           </button>
           <button
+            onClick={() => setTab("SOCIAL")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              tab === "SOCIAL" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+            }`}
+          >
+            Vista social
+          </button>
+          <button
             onClick={() => setTab("SYSTEM")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
               tab === "SYSTEM" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
@@ -690,6 +699,8 @@ export default function AdminDashboardPage() {
 
       {tab === "INCIDENTS" ? <IncidentsWorkspace token={token} /> : null}
 
+      {tab === "SOCIAL" ? <AdminIncidentsFeed /> : null}
+
       {tab === "SYSTEM" ? (
         <section className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
@@ -708,13 +719,34 @@ export default function AdminDashboardPage() {
                 API: <strong>{system.api_ok ? "OK" : "FAIL"}</strong>
               </p>
               <p>
-                Gemini: <strong>{system.gemini.state}</strong> ({system.gemini.model})
+                Router IA:{" "}
+                <strong
+                  className={
+                    system.ai.state === "FAILING" || system.ai.state === "MISSING_CONFIGURATION"
+                      ? "text-red-700"
+                      : system.ai.state === "RETRYING" || system.ai.state === "FALLBACK_ACTIVE"
+                        ? "text-amber-700"
+                        : "text-emerald-700"
+                  }
+                >
+                  {system.ai.state}
+                </strong>{" "}
+                ({system.ai.model})
               </p>
               <p>
-                Fallback 24h: <strong>{system.gemini.fallback_count_24h}</strong>
+                Clasificaciones fallidas 24h:{" "}
+                <strong className={system.ai.failed_classifications_24h > 0 ? "text-red-700" : ""}>
+                  {system.ai.failed_classifications_24h}
+                </strong>
               </p>
               <p>
-                Quota 429: <strong>{system.gemini.quota_exhausted_detected ? "SI" : "NO"}</strong>
+                Fallback 24h: <strong>{system.ai.fallback_count_24h}</strong>
+              </p>
+              <p>
+                Cuota agotada:{" "}
+                <strong className={system.ai.quota_exhausted_detected ? "text-red-700" : ""}>
+                  {system.ai.quota_exhausted_detected ? "SI" : "NO"}
+                </strong>
               </p>
               <div className="grid gap-1">
                 {system.workers.map((w) => (
@@ -744,9 +776,14 @@ export default function AdminDashboardPage() {
                   ))}
                 </div>
               ) : null}
-              {system.gemini.latest_fallback_reason ? (
+              {system.ai.latest_failure_reason ? (
+                <p className="rounded-lg bg-red-50 p-2 text-xs text-red-800">
+                  Último fallo del router: {system.ai.latest_failure_reason}
+                </p>
+              ) : null}
+              {system.ai.latest_fallback_reason ? (
                 <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-                  Ultimo fallback: {system.gemini.latest_fallback_reason}
+                  Último fallback: {system.ai.latest_fallback_reason}
                 </p>
               ) : null}
             </div>

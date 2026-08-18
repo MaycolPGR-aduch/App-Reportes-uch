@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -40,7 +40,7 @@ class LocalStorageProvider(StorageProvider):
         if extension is None:
             raise ValueError(f"Unsupported mime type: {mime_type}")
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         folder = self.base_dir / f"{now:%Y}" / f"{now:%m}" / f"{now:%d}"
         folder.mkdir(parents=True, exist_ok=True)
 
