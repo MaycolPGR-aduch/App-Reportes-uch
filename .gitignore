@@ -33,3 +33,17 @@ frontend/next-env.d.ts
 # Logs
 *.log
 
+# Herramientas de agentes instaladas localmente
+.agents/
+skills-lock.json
+.claude/settings.local.json
+
+# Entregables generados y pesados
+docs/demo/
+
+# Cache de Python en cualquier ubicacion
+__pycache__/
+*.pyc
+
+# Archivos de bloqueo de Office
+~$*
