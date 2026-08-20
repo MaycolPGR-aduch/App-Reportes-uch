@@ -38,7 +38,7 @@ import { IncidentsWorkspace } from "@/components/incidents-workspace";
 import { useConfirm } from "@/components/confirm-dialog";
 import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
 
-type TabKey = "INCIDENTS" | "SOCIAL" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
+type TabKey = "INCIDENTS" | "SOCIAL" | "ASSIGNMENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
 const ASSIGNMENT_STATUS_OPTIONS: AssignmentStatus[] = ["ASSIGNED", "ACKNOWLEDGED", "COMPLETED"];
@@ -119,6 +119,7 @@ export default function AdminDashboardPage() {
   const [assignStaffId, setAssignStaffId] = useState("");
   const [assignNotes, setAssignNotes] = useState("");
   const [assignNotify, setAssignNotify] = useState(true);
+  const [onlyUnassigned, setOnlyUnassigned] = useState(true);
   const [assignLoading, setAssignLoading] = useState(false);
   const [manualIncidentStatus, setManualIncidentStatus] = useState<IncidentStatus>("IN_PROGRESS");
   const [incidentStatusLoading, setIncidentStatusLoading] = useState(false);
@@ -142,6 +143,12 @@ export default function AdminDashboardPage() {
   const [editZonePriority, setEditZonePriority] = useState(100);
   const [editZoneIsActive, setEditZoneIsActive] = useState(true);
   const [editZoneGeojson, setEditZoneGeojson] = useState(DEFAULT_ZONE_GEOJSON);
+
+  const unassignedCount = incidentPool.filter((i) => i.assignment_count === 0).length;
+  const visibleIncidents = onlyUnassigned
+    ? incidentPool.filter((i) => i.assignment_count === 0 || i.id === assignIncidentId)
+    : incidentPool;
+  const assignedStaffName = staff.find((s) => s.id === assignStaffId)?.full_name ?? "";
 
   const clearSession = () => {
     void logout().catch(() => undefined);
@@ -302,13 +309,17 @@ export default function AdminDashboardPage() {
     fetchZones();
   }, [fetchIncidentPool, fetchStaff, fetchSystem, fetchUsers, fetchZones, role, token]);
 
+  // La carga del responsable se sigue desde la tabla de Staff y también desde el
+  // desplegable de la pestaña Asignaciones; antes solo respondía a la tabla, de
+  // modo que el panel pedía "selecciona un staff" con uno ya elegido al lado.
   useEffect(() => {
-    if (!selectedStaff) {
+    const staffId = selectedStaff?.id ?? assignStaffId;
+    if (!staffId) {
       setStaffAssignments([]);
       return;
     }
-    fetchStaffAssignments(selectedStaff.id);
-  }, [fetchStaffAssignments, selectedStaff]);
+    fetchStaffAssignments(staffId);
+  }, [assignStaffId, fetchStaffAssignments, selectedStaff]);
 
   const selectedIncident = useMemo(
     () => incidentPool.find((item) => item.id === assignIncidentId) ?? null,
@@ -675,6 +686,14 @@ export default function AdminDashboardPage() {
             Staff
           </button>
           <button
+            onClick={() => setTab("ASSIGNMENTS")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              tab === "ASSIGNMENTS" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+            }`}
+          >
+            Asignaciones
+          </button>
+          <button
             onClick={() => setTab("ZONES")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
               tab === "ZONES" ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
@@ -896,44 +915,97 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+        </section>
+      ) : null}
+
+      {tab === "ASSIGNMENTS" ? (
+        <section className="grid gap-4">
           <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
-              <h3 className="text-sm font-semibold">Asignación manual y estado de incidencia</h3>
+            <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Paso 1 · Elegir la incidencia</h3>
+                <p className="text-xs text-slate-500">
+                  Por defecto se listan solo las que aún no tienen responsable.
+                </p>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={onlyUnassigned}
+                  onChange={(e) => setOnlyUnassigned(e.target.checked)}
+                />
+                Mostrar solo incidencias sin asignar ({unassignedCount} de {incidentPool.length})
+              </label>
+
               <select
                 value={assignIncidentId}
                 onChange={(e) => setAssignIncidentId(e.target.value)}
                 className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
               >
-                <option value="">Selecciona incidencia</option>
-                {incidentPool.map((incident) => (
+                <option value="">Selecciona una incidencia</option>
+                {visibleIncidents.map((incident) => (
                   <option key={incident.id} value={incident.id}>
-                    [{incident.status}] [{incident.priority}] {incident.id.slice(0, 8)} -{" "}
-                    {incident.description.slice(0, 70)} | Zona:{" "}
-                    {incident.location_zone_name ?? "No definida"}
+                    {incident.id.slice(0, 8)} · {incident.priority} ·{" "}
+                    {incident.location_zone_name ?? "Zona no definida"}
+                    {incident.assignment_count > 0
+                      ? " · ya asignada a " + incident.assigned_to.join(", ")
+                      : ""}
                   </option>
                 ))}
               </select>
+
+              {selectedIncident ? (
+                <div className="grid gap-1 rounded-lg border border-[var(--line)] bg-slate-50 p-3 text-xs">
+                  <p className="text-slate-700">{selectedIncident.description}</p>
+                  <p className="text-slate-500">
+                    Estado {selectedIncident.status} · categoría {selectedIncident.category}
+                  </p>
+                  {selectedIncident.assignment_count > 0 ? (
+                    <p className="rounded bg-amber-50 px-2 py-1 text-amber-800">
+                      Esta incidencia ya está asignada a {selectedIncident.assigned_to.join(", ")}.
+                      Asignarla de nuevo al mismo responsable solo actualiza la nota.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Selecciona una incidencia para ver su detalle.
+                </p>
+              )}
+            </div>
+
+            <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Paso 2 · Asignar a un responsable</h3>
+                <p className="text-xs text-slate-500">
+                  El plazo de atención se calcula según la prioridad de la incidencia.
+                </p>
+              </div>
+
               <select
                 value={assignStaffId}
                 onChange={(e) => setAssignStaffId(e.target.value)}
                 className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
               >
-                <option value="">Selecciona staff</option>
+                <option value="">Selecciona un responsable</option>
                 {staff
                   .filter((item) => item.is_active)
                   .map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.full_name} - {item.area_name} ({item.category})
+                      {item.full_name} · {item.area_name} ({item.category})
                     </option>
                   ))}
               </select>
+
               <textarea
                 className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
                 value={assignNotes}
                 onChange={(e) => setAssignNotes(e.target.value)}
-                placeholder="Notas de asignación"
+                placeholder="Notas para el responsable (opcional)"
                 maxLength={300}
               />
+
               <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
@@ -942,45 +1014,63 @@ export default function AdminDashboardPage() {
                 />
                 Enviar correo al responsable
               </label>
+
               <button
                 onClick={assignIncidentHandler}
-                disabled={assignLoading || incidentPoolLoading}
-                className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-70"
+                disabled={assignLoading || incidentPoolLoading || !assignIncidentId || !assignStaffId}
+                className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {assignLoading ? "Asignando..." : "Asignar incidencia"}
               </button>
-              <div className="grid gap-2 rounded-lg border border-[var(--line)] bg-slate-50 p-2">
-                <select
-                  value={manualIncidentStatus}
-                  onChange={(e) => setManualIncidentStatus(e.target.value as IncidentStatus)}
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                >
-                  {INCIDENT_STATUS_OPTIONS.map((statusValue) => (
-                    <option key={statusValue} value={statusValue}>
-                      {statusValue}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={updateIncidentStatusHandler}
-                  disabled={incidentStatusLoading || !assignIncidentId}
-                  className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm font-semibold disabled:opacity-70"
-                >
-                  {incidentStatusLoading ? "Actualizando..." : "Actualizar estado de incidencia"}
-                </button>
+              {!assignIncidentId || !assignStaffId ? (
+                <p className="text-xs text-slate-500">
+                  Elige una incidencia y un responsable para habilitar la asignación.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+            <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Cambiar el estado de la incidencia</h3>
+                <p className="text-xs text-slate-500">
+                  Operación independiente de la asignación. Se aplica a la incidencia elegida en el
+                  paso 1.
+                </p>
               </div>
+              <select
+                value={manualIncidentStatus}
+                onChange={(e) => setManualIncidentStatus(e.target.value as IncidentStatus)}
+                className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
+              >
+                {INCIDENT_STATUS_OPTIONS.map((statusValue) => (
+                  <option key={statusValue} value={statusValue}>
+                    {statusValue}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={updateIncidentStatusHandler}
+                disabled={incidentStatusLoading || !assignIncidentId}
+                className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                {incidentStatusLoading ? "Actualizando..." : "Actualizar estado"}
+              </button>
             </div>
 
-            <div className="admin-panel admin-form-surface grid gap-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
               <h3 className="text-sm font-semibold">
-                Incidencias asignadas {selectedStaff ? `(${selectedStaff.full_name})` : ""}
+                Carga del responsable{assignedStaffName ? " · " + assignedStaffName : ""}
               </h3>
-              {!selectedStaff ? (
-                <p className="text-xs text-slate-500">Selecciona un staff para ver asignaciones.</p>
+              {!assignStaffId ? (
+                <p className="text-xs text-slate-500">
+                  Elige un responsable en el paso 2 para ver lo que ya tiene asignado.
+                </p>
               ) : staffAssignmentsLoading ? (
                 <p className="text-xs text-slate-500">Cargando asignaciones...</p>
               ) : staffAssignments.length === 0 ? (
-                <p className="text-xs text-slate-500">No hay asignaciones registradas.</p>
+                <p className="text-xs text-slate-500">Sin asignaciones registradas.</p>
               ) : (
                 <div className="max-h-[320px] overflow-auto">
                   <table className="w-full text-xs">
@@ -990,7 +1080,7 @@ export default function AdminDashboardPage() {
                         <th className="p-1.5">Zona</th>
                         <th className="p-1.5">Estado</th>
                         <th className="p-1.5">Asignación</th>
-                        <th className="p-1.5">Acciones</th>
+                        <th className="p-1.5">Marcar como</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1013,8 +1103,11 @@ export default function AdminDashboardPage() {
                                       statusValue,
                                     )
                                   }
-                                  disabled={assignmentStatusLoadingId === assignment.assignment_id}
-                                  className="rounded border border-[var(--line)] px-2 py-0.5"
+                                  disabled={
+                                    assignmentStatusLoadingId === assignment.assignment_id ||
+                                    assignment.assignment_status === statusValue
+                                  }
+                                  className="rounded border border-[var(--line)] px-2 py-0.5 disabled:opacity-40"
                                 >
                                   {statusValue}
                                 </button>

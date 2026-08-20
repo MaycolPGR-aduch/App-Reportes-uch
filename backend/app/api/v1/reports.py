@@ -24,6 +24,7 @@ from app.models.enums import (
 )
 from app.models.evidence import IncidentEvidence
 from app.models.assignment import IncidentAssignment
+from app.models.responsible import Responsible
 from app.models.community_reaction import CommunityReaction
 from app.models.incident import Incident
 from app.models.location import IncidentLocation
@@ -357,6 +358,20 @@ def list_incidents(
         .all()
     )
 
+    # Responsables por incidencia en una sola consulta, para no repetir una por
+    # fila del listado.
+    assignees: dict[UUID, list[str]] = {}
+    incident_ids = [inc.id for inc in incidents]
+    if incident_ids:
+        rows = (
+            db.query(IncidentAssignment.incident_id, Responsible.full_name)
+            .join(Responsible, Responsible.id == IncidentAssignment.responsible_id)
+            .filter(IncidentAssignment.incident_id.in_(incident_ids))
+            .all()
+        )
+        for incident_id, full_name in rows:
+            assignees.setdefault(incident_id, []).append(full_name)
+
     items = [
         IncidentListItem(
             id=inc.id,
@@ -368,6 +383,8 @@ def list_incidents(
             reporter_campus_id=inc.reporter.campus_id if inc.reporter else "ANONYMOUS",
             location_zone_name=inc.location.resolved_zone_name if inc.location else None,
             location_status=inc.location.location_status if inc.location else None,
+            assignment_count=len(assignees.get(inc.id, [])),
+            assigned_to=sorted(assignees.get(inc.id, [])),
         )
         for inc in incidents
     ]

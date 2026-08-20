@@ -20,6 +20,8 @@ export type IncidentListItem = {
   reporter_campus_id: string;
   location_zone_name: string | null;
   location_status: string | null;
+  assignment_count: number;
+  assigned_to: string[];
 };
 
 export type IncidentListResponse = {

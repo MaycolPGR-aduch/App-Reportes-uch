@@ -90,6 +90,10 @@ class IncidentListItem(BaseModel):
     reporter_campus_id: str
     location_zone_name: str | None
     location_status: str | None
+    # Sin esto el panel de asignación no puede distinguir una incidencia libre
+    # de una ya encomendada, y las ofrecía todas por igual.
+    assignment_count: int = 0
+    assigned_to: list[str] = []
 
 
 class IncidentDetail(BaseModel):
