@@ -37,6 +37,7 @@ frontend/next-env.d.ts
 .agents/
 skills-lock.json
 .claude/settings.local.json
+.claude/skills/
 
 # Entregables generados y pesados
 docs/demo/

@@ -58,7 +58,12 @@ from app.schemas.admin import (
     WorkerStatusOut,
 )
 from app.services.jobs import enqueue_job
-from app.services.location_resolver import resolve_campus_zone, validate_polygon_geojson
+from app.services.location_resolver import (
+    distance_meters,
+    polygon_centroid,
+    resolve_campus_zone,
+    validate_polygon_geojson,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -269,6 +274,58 @@ def _zone_out(zone: CampusZone) -> CampusZoneOut:
         created_at=zone.created_at,
         updated_at=zone.updated_at,
     )
+
+
+# A campus spans a few hundred metres. A zone landing kilometres away is almost
+# always the seed template's example polygon saved without editing -- exactly how
+# "Salida Principal" ended up 10.6 km from the other six.
+ZONE_COHERENCE_LIMIT_M = 2_000.0
+
+
+def _assert_zone_is_near_campus(
+    db: Session,
+    polygon_geojson: dict,
+    *,
+    exclude_zone_id: UUID | None = None,
+) -> None:
+    """Reject a zone that sits implausibly far from the ones already defined.
+
+    Skipped for the first zone, since there is nothing to compare against.
+    Callers may pass allow_distant_zone to record a deliberate second site.
+    """
+    try:
+        candidate = polygon_centroid(polygon_geojson)
+    except ValueError:
+        return  # geometry validation reports this separately
+
+    query = db.query(CampusZone).filter(CampusZone.is_active.is_(True))
+    if exclude_zone_id is not None:
+        query = query.filter(CampusZone.id != exclude_zone_id)
+
+    centroids = []
+    for zone in query.all():
+        try:
+            centroids.append(polygon_centroid(zone.polygon_geojson))
+        except ValueError:
+            continue
+    if not centroids:
+        return
+
+    reference = (
+        sum(lat for lat, _ in centroids) / len(centroids),
+        sum(lng for _, lng in centroids) / len(centroids),
+    )
+    distance = distance_meters(candidate, reference)
+    if distance > ZONE_COHERENCE_LIMIT_M:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"La zona queda a {distance / 1000:.1f} km del resto del campus. "
+                "Revisa el polígono: suele ser la plantilla de ejemplo guardada sin "
+                "editar. Si el sitio es correcto, vuelve a enviar marcando "
+                "«permitir zona distante»."
+            ),
+        )
 
 
 QUOTA_MARKERS = ("429", "quota", "rate limit", "rate_limit", "insufficient", "recharge", "billing")
@@ -1083,6 +1140,9 @@ def create_campus_zone(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    if not payload.allow_distant_zone:
+        _assert_zone_is_near_campus(db, payload.polygon_geojson)
+
     zone = CampusZone(
         name=zone_name,
         code=zone_code,
@@ -1140,6 +1200,9 @@ def update_campus_zone(
             validate_polygon_geojson(payload.polygon_geojson)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not payload.allow_distant_zone:
+            # Compare against the other zones, not this one's current polygon.
+            _assert_zone_is_near_campus(db, payload.polygon_geojson, exclude_zone_id=zone.id)
         zone.polygon_geojson = payload.polygon_geojson
 
     db.commit()

@@ -35,6 +35,7 @@ import {
   updateIncidentStatusAdmin,
 } from "@/lib/api-client";
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
+import { useConfirm } from "@/components/confirm-dialog";
 import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
 
 type TabKey = "INCIDENTS" | "SOCIAL" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
@@ -60,6 +61,7 @@ const DEFAULT_ZONE_GEOJSON = `{
 }`;
 
 export default function AdminDashboardPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [campusId, setCampusId] = useState("");
@@ -365,6 +367,7 @@ export default function AdminDashboardPage() {
   };
 
   const saveUserEdit = async () => {
+    if (!(await confirm({ title: "Guardar cambios del usuario", message: `Se actualizarán los datos de ${selectedUser?.full_name ?? "la cuenta"}.`, warning: editPassword ? "Se establecerá una contraseña nueva para esta cuenta." : undefined, confirmLabel: "Guardar" }))) return;
     if (!token || !selectedUser) return;
     setUsersError(null);
     try {
@@ -405,6 +408,7 @@ export default function AdminDashboardPage() {
 
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!(await confirm({ title: "Crear usuario", message: `Se creará la cuenta ${newCampusId || "nueva"} con perfil ${newRole}.`, confirmLabel: "Crear" }))) return;
     if (!token) return;
     setUsersError(null);
     try {
@@ -448,6 +452,7 @@ export default function AdminDashboardPage() {
   };
 
   const assignIncidentHandler = async () => {
+    if (!(await confirm({ title: "Asignar incidencia", message: "Se asignará la incidencia al personal seleccionado.", warning: assignNotify ? "Se enviará un correo real al responsable." : undefined, confirmLabel: "Asignar" }))) return;
     if (!token) return;
     if (!assignIncidentId || !assignStaffId) {
       setStaffError("Selecciona incidencia y staff para asignar.");
@@ -495,6 +500,7 @@ export default function AdminDashboardPage() {
   };
 
   const updateIncidentStatusHandler = async () => {
+    if (!(await confirm({ title: "Cambiar estado de la incidencia", message: `La incidencia pasará a ${manualIncidentStatus}.`, danger: manualIncidentStatus === "REJECTED", confirmLabel: "Cambiar" }))) return;
     if (!token || !assignIncidentId) {
       setStaffError("Selecciona una incidencia para cambiar su estado.");
       return;
@@ -534,6 +540,7 @@ export default function AdminDashboardPage() {
 
   const createZoneHandler = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!(await confirm({ title: "Crear zona del campus", message: `Se creará la zona ${newZoneName || "nueva"} con el polígono indicado.`, warning: "Verifica que el polígono sea el real y no el ejemplo precargado.", confirmLabel: "Crear" }))) return;
     if (!token) return;
     setZonesError(null);
     try {
@@ -558,6 +565,7 @@ export default function AdminDashboardPage() {
   };
 
   const saveZoneEditHandler = async () => {
+    if (!(await confirm({ title: "Guardar cambios de la zona", message: `Se actualizará ${selectedZone?.name ?? "la zona"}.`, warning: "Un polígono incorrecto hace que los reportes se ubiquen mal.", confirmLabel: "Guardar" }))) return;
     if (!token || !selectedZone) return;
     setZonesError(null);
     try {
@@ -1455,8 +1463,7 @@ export default function AdminDashboardPage() {
           </div>
         </section>
       ) : null}
+      {confirmDialog}
     </main>
   );
 }
-
-

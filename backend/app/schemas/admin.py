@@ -203,6 +203,7 @@ class CampusZoneCreateRequest(BaseModel):
     priority: int = Field(default=100, ge=0, le=1000)
     polygon_geojson: dict
     is_active: bool = True
+    allow_distant_zone: bool = False
 
 
 class CampusZoneUpdateRequest(BaseModel):
@@ -211,6 +212,7 @@ class CampusZoneUpdateRequest(BaseModel):
     priority: int | None = Field(default=None, ge=0, le=1000)
     polygon_geojson: dict | None = None
     is_active: bool | None = None
+    allow_distant_zone: bool = False
 
 
 class IncidentLocationResolveResponse(BaseModel):
