@@ -253,6 +253,7 @@ class ModerationQueueItem(BaseModel):
 class ModerationQueueResponse(BaseModel):
     total: int
     ai_moderation_enabled: bool
+    ai_provider_failing: bool = False
     items: list[ModerationQueueItem]
 
 

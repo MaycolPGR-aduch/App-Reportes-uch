@@ -1534,9 +1534,21 @@ def list_moderation_queue(
             )
         )
 
+    provider_failing = (
+        db.query(func.count(Job.id))
+        .filter(
+            Job.type == JobType.CLASSIFY_INCIDENT,
+            Job.status == JobStatus.FAILED,
+            Job.updated_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+        )
+        .scalar()
+        or 0
+    ) > 0
+
     return ModerationQueueResponse(
         total=int(total),
         ai_moderation_enabled=settings.ai_moderation_enabled,
+        ai_provider_failing=provider_failing,
         items=items,
     )
 

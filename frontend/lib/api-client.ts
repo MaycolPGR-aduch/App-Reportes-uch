@@ -165,6 +165,7 @@ export type ModerationQueueItem = {
 export type ModerationQueueResponse = {
   total: number;
   ai_moderation_enabled: boolean;
+  ai_provider_failing: boolean;
   items: ModerationQueueItem[];
 };
 

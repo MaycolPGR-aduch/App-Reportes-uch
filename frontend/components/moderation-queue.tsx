@@ -49,6 +49,7 @@ export function ModerationQueue() {
   const [items, setItems] = useState<ModerationQueueItem[]>([]);
   const [total, setTotal] = useState(0);
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [providerFailing, setProviderFailing] = useState(false);
   const [includePublished, setIncludePublished] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function ModerationQueue() {
       setItems(data.items);
       setTotal(data.total);
       setAiEnabled(data.ai_moderation_enabled);
+      setProviderFailing(data.ai_provider_failing);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cargar la cola de moderación");
     } finally {
@@ -128,16 +130,26 @@ export function ModerationQueue() {
         </button>
       </div>
 
+      {/* La política configurada y el estado real del proveedor son cosas
+          distintas: decir "la IA decide" mientras está caída induce a error. */}
       <div
         className={`rounded-lg border px-3 py-2 text-xs ${
-          aiEnabled
-            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-            : "border-amber-200 bg-amber-50 text-amber-800"
+          !aiEnabled || providerFailing
+            ? "border-amber-300 bg-amber-50 text-amber-900"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800"
         }`}
       >
-        {aiEnabled
-          ? "Moderación automática activa: la IA decide y aquí quedan las que rechazó o no pudo evaluar."
-          : "Moderación automática desactivada: toda incidencia con consentimiento espera decisión humana."}
+        {!aiEnabled ? (
+          "Moderación automática desactivada por configuración: toda incidencia con consentimiento espera decisión humana."
+        ) : providerFailing ? (
+          <>
+            <strong>La moderación automática está configurada, pero el proveedor de IA no responde.</strong>{" "}
+            Nada se publicará solo mientras siga caído: todo lo que llegue quedará aquí esperando
+            decisión humana. Revisa la pestaña Sistema para el detalle del fallo.
+          </>
+        ) : (
+          "Moderación automática activa: la IA decide y aquí quedan las que rechazó o no pudo evaluar."
+        )}
       </div>
 
       <label className="flex items-center gap-2 text-xs">
