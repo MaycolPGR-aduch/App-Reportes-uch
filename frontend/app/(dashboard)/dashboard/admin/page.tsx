@@ -38,6 +38,7 @@ import { IncidentsWorkspace } from "@/components/incidents-workspace";
 import { useConfirm } from "@/components/confirm-dialog";
 import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
 import { ModerationQueue } from "@/components/moderation-queue";
+import { ZoneCapture } from "@/components/zone-capture";
 
 type TabKey = "INCIDENTS" | "SOCIAL" | "ASSIGNMENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -121,6 +122,10 @@ export default function AdminDashboardPage() {
   const [assignNotes, setAssignNotes] = useState("");
   const [assignNotify, setAssignNotify] = useState(true);
   const [onlyUnassigned, setOnlyUnassigned] = useState(true);
+  // Pegar geometría a mano es como se coló una zona a 10 km del campus:
+  // capturarla caminando evita transcribir coordenadas.
+  const [modoCaptura, setModoCaptura] = useState(false);
+  const [modoCapturaEdicion, setModoCapturaEdicion] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
   const [manualIncidentStatus, setManualIncidentStatus] = useState<IncidentStatus>("IN_PROGRESS");
   const [incidentStatusLoading, setIncidentStatusLoading] = useState(false);
@@ -1345,13 +1350,47 @@ export default function AdminDashboardPage() {
                 />
                 Activa
               </label>
-              <textarea
-                className="min-h-[160px] rounded-lg border border-[var(--line)] px-3 py-2 font-mono text-xs"
-                value={newZoneGeojson}
-                onChange={(e) => setNewZoneGeojson(e.target.value)}
-                spellCheck={false}
-                required
-              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModoCaptura(false)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    !modoCaptura ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+                  }`}
+                >
+                  Pegar coordenadas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoCaptura(true)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    modoCaptura ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+                  }`}
+                >
+                  Capturar caminando
+                </button>
+              </div>
+
+              {modoCaptura ? (
+                <ZoneCapture
+                  zonasExistentes={zones}
+                  onGuardar={(poligono) => {
+                    setNewZoneGeojson(JSON.stringify(poligono, null, 2));
+                    setModoCaptura(false);
+                    setZoneActionMessage(
+                      "Polígono capturado. Revisa el nombre y pulsa «Crear zona».",
+                    );
+                  }}
+                />
+              ) : (
+                <textarea
+                  className="min-h-[160px] rounded-lg border border-[var(--line)] px-3 py-2 font-mono text-xs"
+                  value={newZoneGeojson}
+                  onChange={(e) => setNewZoneGeojson(e.target.value)}
+                  spellCheck={false}
+                  required
+                />
+              )}
               <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
                 Crear zona
               </button>
@@ -1389,12 +1428,48 @@ export default function AdminDashboardPage() {
                     />
                     Activa
                   </label>
-                  <textarea
-                    className="min-h-[180px] rounded-lg border border-[var(--line)] px-3 py-2 font-mono text-xs"
-                    value={editZoneGeojson}
-                    onChange={(e) => setEditZoneGeojson(e.target.value)}
-                    spellCheck={false}
-                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModoCapturaEdicion(false)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                        !modoCapturaEdicion ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+                      }`}
+                    >
+                      Editar coordenadas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModoCapturaEdicion(true)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                        modoCapturaEdicion ? "bg-emerald-700 text-white" : "border border-[var(--line)]"
+                      }`}
+                    >
+                      Recapturar caminando
+                    </button>
+                  </div>
+
+                  {modoCapturaEdicion ? (
+                    <ZoneCapture
+                      key={selectedZone.id}
+                      zonasExistentes={zones}
+                      zonaEnEdicion={selectedZone}
+                      onGuardar={(poligono) => {
+                        setEditZoneGeojson(JSON.stringify(poligono, null, 2));
+                        setModoCapturaEdicion(false);
+                        setZoneActionMessage(
+                          "Polígono recapturado. Pulsa «Guardar cambios» para aplicarlo.",
+                        );
+                      }}
+                    />
+                  ) : (
+                    <textarea
+                      className="min-h-[180px] rounded-lg border border-[var(--line)] px-3 py-2 font-mono text-xs"
+                      value={editZoneGeojson}
+                      onChange={(e) => setEditZoneGeojson(e.target.value)}
+                      spellCheck={false}
+                    />
+                  )}
                   <button
                     onClick={saveZoneEditHandler}
                     className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white"
