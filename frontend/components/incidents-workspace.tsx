@@ -234,6 +234,15 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
                     <span className="text-xs text-emerald-700">
                       Zona: {item.location_zone_name ?? "No definida"} ({item.location_status ?? "N/A"})
                     </span>
+                    <span
+                      className={`text-xs ${
+                        item.assignment_count === 0 ? "text-slate-400" : "text-slate-600"
+                      }`}
+                    >
+                      {item.assignment_count === 0
+                        ? "Sin asignar"
+                        : `Responsable: ${item.assigned_to.join(", ")}`}
+                    </span>
                   </button>
                 </li>
               );
@@ -271,6 +280,57 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
                   value={`${selectedDetail.location.resolved_zone_name ?? "No definida"} (${selectedDetail.location.location_status})`}
                 />
               ) : null}
+              <div className="grid gap-2 rounded-lg border border-[var(--line)] p-2.5">
+                <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
+                  Responsable asignado
+                </span>
+                {selectedDetail.assignments.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    Sin asignar. Usa la pestaña Asignaciones para encomendarla.
+                  </p>
+                ) : (
+                  selectedDetail.assignments.map((assignment) => {
+                    const overdue =
+                      assignment.due_at !== null &&
+                      assignment.completed_at === null &&
+                      new Date(assignment.due_at) < new Date();
+                    return (
+                      <div
+                        key={assignment.id}
+                        className="grid gap-0.5 border-t border-[var(--line)] pt-2 first:border-t-0 first:pt-0"
+                      >
+                        <p className="text-xs font-semibold text-slate-800">
+                          {assignment.responsible_name}{" "}
+                          <span className="font-normal text-slate-500">
+                            · {assignment.responsible_area}
+                          </span>
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {assignment.responsible_email}
+                          {assignment.responsible_phone ? ` · ${assignment.responsible_phone}` : ""}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Asignación: <strong>{assignment.status}</strong> ·{" "}
+                          {new Date(assignment.assigned_at).toLocaleString()}
+                        </p>
+                        {assignment.completed_at ? (
+                          <p className="text-xs text-emerald-700">
+                            Atendida el {new Date(assignment.completed_at).toLocaleString()}
+                          </p>
+                        ) : assignment.due_at ? (
+                          <p className={`text-xs ${overdue ? "text-red-700" : "text-slate-600"}`}>
+                            Plazo: {new Date(assignment.due_at).toLocaleString()}
+                            {overdue ? " · vencido" : ""}
+                          </p>
+                        ) : null}
+                        {assignment.notes ? (
+                          <p className="text-xs italic text-slate-500">{assignment.notes}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
               <DetailRow label="Evidencias" value={String(selectedDetail.evidences.length)} />
               {selectedDetail.evidences.length > 0 ? (
                 <div className="grid gap-2 rounded-lg border border-[var(--line)] p-2.5">

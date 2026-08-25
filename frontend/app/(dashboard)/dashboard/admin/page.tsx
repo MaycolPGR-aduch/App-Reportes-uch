@@ -150,6 +150,12 @@ export default function AdminDashboardPage() {
     : incidentPool;
   const assignedStaffName = staff.find((s) => s.id === assignStaffId)?.full_name ?? "";
 
+  const pendingAssignments = staffAssignments.filter(
+    (a) => a.assignment_status !== "COMPLETED",
+  );
+  const completedAssignments = staffAssignments.filter(
+    (a) => a.assignment_status === "COMPLETED",
+  );
   const clearSession = () => {
     void logout().catch(() => undefined);
     setToken(null);
@@ -915,6 +921,94 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+          <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
+            <div>
+              <h3 className="text-sm font-semibold">
+                Carga de trabajo{selectedStaff ? ` · ${selectedStaff.full_name}` : ""}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Selecciona una fila del listado para ver qué lleva y qué ya atendió.
+              </p>
+            </div>
+
+            {!selectedStaff ? (
+              <p className="text-xs text-slate-500">Ningún staff seleccionado.</p>
+            ) : staffAssignmentsLoading ? (
+              <p className="text-xs text-slate-500">Cargando asignaciones...</p>
+            ) : staffAssignments.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Este staff no tiene incidencias asignadas.
+              </p>
+            ) : (
+              <div className="grid gap-3">
+                <div className="grid gap-1">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Pendientes ({pendingAssignments.length})
+                  </p>
+                  {pendingAssignments.length === 0 ? (
+                    <p className="text-xs text-slate-500">Nada pendiente.</p>
+                  ) : (
+                    pendingAssignments.map((assignment) => {
+                      const overdue =
+                        assignment.due_at !== null && new Date(assignment.due_at) < new Date();
+                      return (
+                        <div
+                          key={assignment.assignment_id}
+                          className="rounded-lg border border-[var(--line)] p-2 text-xs"
+                        >
+                          <p className="font-semibold text-slate-800">
+                            {assignment.incident_id.slice(0, 8)} · {assignment.incident_priority} ·{" "}
+                            {assignment.incident_category}
+                          </p>
+                          <p className="line-clamp-2 text-slate-600">
+                            {assignment.incident_description}
+                          </p>
+                          <p className="text-slate-500">
+                            Zona: {assignment.incident_zone_name ?? "No definida"} · incidencia{" "}
+                            {assignment.incident_status} · asignación {assignment.assignment_status}
+                          </p>
+                          {assignment.due_at ? (
+                            <p className={overdue ? "font-semibold text-red-700" : "text-slate-500"}>
+                              Plazo: {new Date(assignment.due_at).toLocaleString()}
+                              {overdue ? " · VENCIDO" : ""}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="grid gap-1">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Atendidas ({completedAssignments.length})
+                  </p>
+                  {completedAssignments.length === 0 ? (
+                    <p className="text-xs text-slate-500">Todavía ninguna.</p>
+                  ) : (
+                    <div className="max-h-[220px] overflow-auto">
+                      {completedAssignments.map((assignment) => (
+                        <div
+                          key={assignment.assignment_id}
+                          className="border-t border-[var(--line)] py-1.5 text-xs first:border-t-0"
+                        >
+                          <p className="text-slate-700">
+                            {assignment.incident_id.slice(0, 8)} · {assignment.incident_category} ·{" "}
+                            {assignment.incident_zone_name ?? "Zona no definida"}
+                          </p>
+                          {assignment.completed_at ? (
+                            <p className="text-emerald-700">
+                              Atendida el {new Date(assignment.completed_at).toLocaleString()}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </section>
       ) : null}
 
