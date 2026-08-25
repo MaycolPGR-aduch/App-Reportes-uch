@@ -26,6 +26,7 @@ from app.models.enums import (
     UserRole,
     UserStatus,
 )
+from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job
 from app.models.moderation_decision import ModerationDecision
@@ -1444,7 +1445,12 @@ def _moderation_state(
     decision: ModerationDecision | None,
 ) -> str:
     if decision is not None:
-        return "PUBLICADA_MANUAL" if decision.published else "OCULTA_MANUAL"
+        # Compara contra la visibilidad real: si algo la cambió sin dejar
+        # decisión, la etiqueta no debe quedarse anclada al histórico y decir
+        # "publicada" sobre una incidencia que está oculta.
+        if decision.published == incident.is_community_visible:
+            return "PUBLICADA_MANUAL" if decision.published else "OCULTA_MANUAL"
+        return "PUBLICADA_IA" if incident.is_community_visible else "PENDIENTE_IA"
     evaluated, appropriate, is_incident, _ = _ai_verdict(metric)
     if not evaluated:
         return "PENDIENTE_IA"
@@ -1502,6 +1508,14 @@ def list_moderation_queue(
         )
         decision = _latest_decision(db, incident.id)
         evaluated, appropriate, is_incident, reason = _ai_verdict(metric)
+        # Sin la fotografía no se puede decidir si el contenido es publicable.
+        evidence = (
+            db.query(IncidentEvidence)
+            .filter(IncidentEvidence.incident_id == incident.id)
+            .order_by(IncidentEvidence.created_at.asc())
+            .first()
+        )
+        evidence_id = evidence.id if evidence else None
         items.append(
             ModerationQueueItem(
                 incident_id=incident.id,
@@ -1513,6 +1527,7 @@ def list_moderation_queue(
                     incident.location.resolved_zone_name if incident.location else None
                 ),
                 is_community_visible=incident.is_community_visible,
+                evidence_id=evidence_id,
                 moderation_state=_moderation_state(
                     incident=incident, metric=metric, decision=decision
                 ),

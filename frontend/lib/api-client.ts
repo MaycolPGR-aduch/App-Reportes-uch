@@ -154,6 +154,7 @@ export type ModerationQueueItem = {
   created_at: string;
   location_zone_name: string | null;
   is_community_visible: boolean;
+  evidence_id: string | null;
   moderation_state: string;
   ai_evaluated: boolean;
   ai_is_appropriate: boolean | null;

@@ -240,6 +240,7 @@ class ModerationQueueItem(BaseModel):
     created_at: datetime
     location_zone_name: str | None
     is_community_visible: bool
+    evidence_id: UUID | None = None
     # Por qué no está publicada: PENDIENTE_IA, RECHAZADA_IA, OCULTA_MANUAL o
     # PUBLICADA_MANUAL. Se deriva de la métrica IA y de la última decisión humana.
     moderation_state: str

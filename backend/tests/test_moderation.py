@@ -95,3 +95,30 @@ def test_a_manual_hide_overrides_an_ai_approval() -> None:
     )
 
     assert state == "OCULTA_MANUAL"
+
+
+def test_label_falls_back_when_the_decision_no_longer_matches_reality() -> None:
+    """La etiqueta no debe anclarse al histórico.
+
+    Si la visibilidad cambió sin dejar decisión, decir "publicada por un
+    administrador" sobre una incidencia oculta contradice al propio botón.
+    """
+    state = _moderation_state(
+        incident=_incident(False),          # realmente oculta
+        metric=None,
+        decision=_decision(True),           # la última decisión decía publicar
+    )
+
+    assert state != "PUBLICADA_MANUAL"
+    assert state == "PENDIENTE_IA"
+
+
+def test_label_falls_back_the_other_way_too() -> None:
+    state = _moderation_state(
+        incident=_incident(True),           # realmente visible
+        metric=None,
+        decision=_decision(False),          # la última decisión decía ocultar
+    )
+
+    assert state != "OCULTA_MANUAL"
+    assert state == "PUBLICADA_IA"

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ModerationQueueItem,
+  getEvidenceObjectUrl,
   listModerationQueue,
   setCommunityVisibility,
 } from "@/lib/api-client";
@@ -55,6 +56,23 @@ export function ModerationQueue() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
+  // No se puede decidir si una fotografía es publicable sin verla. Se cargan
+  // bajo demanda porque la evidencia solo se sirve por ruta autenticada.
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+
+  const verEvidencia = async (item: ModerationQueueItem) => {
+    if (!item.evidence_id || previews[item.incident_id]) return;
+    setPreviewLoadingId(item.incident_id);
+    try {
+      const url = await getEvidenceObjectUrl(item.incident_id, item.evidence_id);
+      setPreviews((current) => ({ ...current, [item.incident_id]: url }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cargar la evidencia");
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,6 +93,14 @@ export function ModerationQueue() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previews).forEach((url) => URL.revokeObjectURL(url));
+    };
+    // Solo al desmontar: revocar en cada cambio invalidaría las ya mostradas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const decidir = async (item: ModerationQueueItem, visible: boolean) => {
     const revierteALaIA =
@@ -201,6 +227,30 @@ export function ModerationQueue() {
 
               <p className="text-slate-800">{item.description}</p>
               <p className="text-slate-500">{motivoOculta(item)}</p>
+
+              {item.evidence_id ? (
+                previews[item.incident_id] ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={previews[item.incident_id]}
+                    alt="Evidencia de la incidencia"
+                    className="max-h-72 w-auto rounded-lg border border-[var(--line)]"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void verEvidencia(item)}
+                    disabled={previewLoadingId === item.incident_id}
+                    className="w-fit rounded-lg border border-[var(--line)] px-3 py-1.5 font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                  >
+                    {previewLoadingId === item.incident_id
+                      ? "Cargando evidencia..."
+                      : "Ver la fotografía antes de decidir"}
+                  </button>
+                )
+              ) : (
+                <p className="text-slate-400">Esta incidencia no tiene fotografía adjunta.</p>
+              )}
 
               {item.last_decision ? (
                 <p className="rounded bg-slate-50 px-2 py-1 text-slate-600">
