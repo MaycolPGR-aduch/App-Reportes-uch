@@ -37,6 +37,7 @@ import {
 import { IncidentsWorkspace } from "@/components/incidents-workspace";
 import { useConfirm } from "@/components/confirm-dialog";
 import { AdminIncidentsFeed } from "@/components/admin-incidents-feed";
+import { ModerationQueue } from "@/components/moderation-queue";
 
 type TabKey = "INCIDENTS" | "SOCIAL" | "ASSIGNMENTS" | "SYSTEM" | "USERS" | "STAFF" | "ZONES";
 type ActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -732,7 +733,12 @@ export default function AdminDashboardPage() {
 
       {tab === "INCIDENTS" ? <IncidentsWorkspace token={token} /> : null}
 
-      {tab === "SOCIAL" ? <AdminIncidentsFeed /> : null}
+      {tab === "SOCIAL" ? (
+        <section className="grid gap-4">
+          <ModerationQueue />
+          <AdminIncidentsFeed />
+        </section>
+      ) : null}
 
       {tab === "SYSTEM" ? (
         <section className="admin-panel rounded-2xl border border-[var(--line)] bg-white p-4">

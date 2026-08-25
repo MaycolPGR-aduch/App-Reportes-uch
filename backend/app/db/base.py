@@ -5,6 +5,7 @@ from app.models.account_token import AccountToken
 from app.models.auth_session import AuthSession
 from app.models.campus_zone import CampusZone
 from app.models.community_reaction import CommunityReaction
+from app.models.moderation_decision import ModerationDecision
 from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job

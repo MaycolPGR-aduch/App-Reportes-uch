@@ -28,10 +28,16 @@ from app.models.enums import (
 )
 from app.models.incident import Incident
 from app.models.job import Job
+from app.models.moderation_decision import ModerationDecision
 from app.models.location import IncidentLocation
 from app.models.responsible import Responsible
 from app.models.user import User
 from app.schemas.admin import (
+    CommunityVisibilityRequest,
+    CommunityVisibilityResponse,
+    ModerationDecisionOut,
+    ModerationQueueItem,
+    ModerationQueueResponse,
     AdminCreateUserRequest,
     AdminUpdateUserRequest,
     CampusZoneCreateRequest,
@@ -521,6 +527,11 @@ def get_system_status(
         notes.append("El router IA usó un modelo de respaldo en al menos una ejecución reciente.")
     if not settings.auto_assign_enabled:
         notes.append("Auto-asignación IA desactivada: asignación manual activa.")
+    if not settings.ai_moderation_enabled:
+        notes.append(
+            "Moderación IA desactivada: toda incidencia con consentimiento espera "
+            "decisión manual en la cola de moderación."
+        )
 
     return SystemStatusResponse(
         api_ok=True,
@@ -1403,4 +1414,204 @@ def update_incident_status(
         incident_id=incident.id,
         incident_status=incident.status,
         message="Estado de incidencia actualizado.",
+    )
+
+
+# --------------------------------------------------------------- Moderación
+# La visibilidad comunitaria la decide la IA cuando está disponible, pero la
+# palabra final es del administrador: es quien responde ante la institución.
+
+def _ai_verdict(metric: AIMetric | None) -> tuple[bool, bool | None, bool | None, str | None]:
+    """(evaluada, apropiada, es_incidencia, motivo) a partir de la métrica."""
+    if metric is None:
+        return False, None, None, None
+    raw = metric.raw_response or {}
+    appropriate = raw.get("is_appropriate")
+    is_incident = raw.get("is_incident")
+    reason = raw.get("reason") or None
+    return (
+        True,
+        bool(appropriate) if appropriate is not None else None,
+        bool(is_incident) if is_incident is not None else None,
+        str(reason)[:300] if reason else None,
+    )
+
+
+def _moderation_state(
+    *,
+    incident: Incident,
+    metric: AIMetric | None,
+    decision: ModerationDecision | None,
+) -> str:
+    if decision is not None:
+        return "PUBLICADA_MANUAL" if decision.published else "OCULTA_MANUAL"
+    evaluated, appropriate, is_incident, _ = _ai_verdict(metric)
+    if not evaluated:
+        return "PENDIENTE_IA"
+    if incident.is_community_visible:
+        return "PUBLICADA_IA"
+    if appropriate is False or is_incident is False:
+        return "RECHAZADA_IA"
+    return "PENDIENTE_IA"
+
+
+def _latest_decision(db: Session, incident_id: UUID) -> ModerationDecision | None:
+    return (
+        db.query(ModerationDecision)
+        .filter(ModerationDecision.incident_id == incident_id)
+        .order_by(ModerationDecision.created_at.desc())
+        .first()
+    )
+
+
+@router.get("/moderation-queue", response_model=ModerationQueueResponse)
+def list_moderation_queue(
+    include_published: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=300),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> ModerationQueueResponse:
+    """Incidencias cuyo autor aceptó compartirlas y esperan una decisión.
+
+    Con la IA caída todas caen aquí, que es justo cuando hace falta la vía
+    manual; con la IA operativa quedan las que rechazó y las ya decididas.
+    """
+    settings = get_settings()
+
+    query = (
+        db.query(Incident)
+        .options(joinedload(Incident.location))
+        .filter(Incident.community_consent.is_(True))
+    )
+    if not include_published:
+        query = query.filter(Incident.is_community_visible.is_(False))
+
+    total = query.with_entities(func.count(Incident.id)).scalar() or 0
+    incidents = (
+        query.order_by(Incident.created_at.desc()).offset(offset).limit(limit).all()
+    )
+
+    items: list[ModerationQueueItem] = []
+    for incident in incidents:
+        metric = (
+            db.query(AIMetric)
+            .filter(AIMetric.incident_id == incident.id)
+            .order_by(AIMetric.created_at.desc())
+            .first()
+        )
+        decision = _latest_decision(db, incident.id)
+        evaluated, appropriate, is_incident, reason = _ai_verdict(metric)
+        items.append(
+            ModerationQueueItem(
+                incident_id=incident.id,
+                category=incident.category,
+                status=incident.status,
+                description=incident.description,
+                created_at=incident.created_at,
+                location_zone_name=(
+                    incident.location.resolved_zone_name if incident.location else None
+                ),
+                is_community_visible=incident.is_community_visible,
+                moderation_state=_moderation_state(
+                    incident=incident, metric=metric, decision=decision
+                ),
+                ai_evaluated=evaluated,
+                ai_is_appropriate=appropriate,
+                ai_is_incident=is_incident,
+                ai_reason=reason,
+                last_decision=(
+                    ModerationDecisionOut(
+                        actor_label=decision.actor_label,
+                        published=decision.published,
+                        reason=decision.reason,
+                        ai_verdict=decision.ai_verdict,
+                        created_at=decision.created_at,
+                    )
+                    if decision
+                    else None
+                ),
+            )
+        )
+
+    return ModerationQueueResponse(
+        total=int(total),
+        ai_moderation_enabled=settings.ai_moderation_enabled,
+        items=items,
+    )
+
+
+@router.patch(
+    "/incidents/{incident_id}/community-visibility",
+    response_model=CommunityVisibilityResponse,
+)
+def set_community_visibility(
+    incident_id: UUID,
+    payload: CommunityVisibilityRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+) -> CommunityVisibilityResponse:
+    """Publica o retira una incidencia de la vista comunitaria.
+
+    El administrador puede publicar algo que la IA rechazó; por eso cada
+    decisión queda registrada con su autor y con el veredicto que revirtió.
+    """
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+
+    if payload.visible and not incident.community_consent:
+        # Publicar sin permiso del autor sería exponer su reporte sin consentimiento.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El autor no autorizó compartir esta incidencia en la vista "
+                "comunitaria. No puede publicarse."
+            ),
+        )
+
+    metric = (
+        db.query(AIMetric)
+        .filter(AIMetric.incident_id == incident.id)
+        .order_by(AIMetric.created_at.desc())
+        .first()
+    )
+    evaluated, appropriate, is_incident, _ = _ai_verdict(metric)
+    if not evaluated:
+        verdict = "SIN_EVALUAR"
+    elif appropriate is False:
+        verdict = "IA_INAPROPIADA"
+    elif is_incident is False:
+        verdict = "IA_NO_INCIDENCIA"
+    else:
+        verdict = "IA_APROBADA"
+
+    incident.is_community_visible = payload.visible
+    decision = ModerationDecision(
+        incident_id=incident.id,
+        actor_user_id=current_admin.id,
+        # Copiado, no referenciado: la traza debe sostenerse aunque la cuenta se borre.
+        actor_label=f"{current_admin.full_name} ({current_admin.campus_id})"[:160],
+        published=payload.visible,
+        reason=(payload.reason or "").strip()[:300] or None,
+        ai_verdict=verdict,
+    )
+    db.add(decision)
+    db.commit()
+    db.refresh(incident)
+
+    overrode = payload.visible and verdict in {"IA_INAPROPIADA", "IA_NO_INCIDENCIA"}
+    message = (
+        "Incidencia publicada en la vista comunitaria."
+        if payload.visible
+        else "Incidencia retirada de la vista comunitaria."
+    )
+    if overrode:
+        message += " Se registró que revierte el veredicto de la IA."
+
+    return CommunityVisibilityResponse(
+        incident_id=incident.id,
+        is_community_visible=incident.is_community_visible,
+        moderation_state="PUBLICADA_MANUAL" if payload.visible else "OCULTA_MANUAL",
+        message=message,
     )

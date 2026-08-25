@@ -46,6 +46,7 @@ class Settings:
     ai_request_timeout_seconds: float
     ai_max_output_tokens: int
     auto_assign_enabled: bool
+    ai_moderation_enabled: bool
     brevo_api_key: str | None
     brevo_from_email: str | None
     brevo_from_name: str
@@ -127,6 +128,7 @@ def get_settings() -> Settings:
         ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "30")),
         ai_max_output_tokens=int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")),
         auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
+        ai_moderation_enabled=_as_bool(os.getenv("AI_MODERATION_ENABLED"), default=True),
         brevo_api_key=os.getenv("BREVO_API_KEY"),
         brevo_from_email=os.getenv("BREVO_FROM_EMAIL"),
         brevo_from_name=os.getenv("BREVO_FROM_NAME", "Campus Alertas"),

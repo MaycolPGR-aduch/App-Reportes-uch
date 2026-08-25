@@ -222,3 +222,47 @@ class IncidentLocationResolveResponse(BaseModel):
     location_status: str
     location_confidence: float | None
     message: str
+
+
+class ModerationDecisionOut(BaseModel):
+    actor_label: str
+    published: bool
+    reason: str | None
+    ai_verdict: str | None
+    created_at: datetime
+
+
+class ModerationQueueItem(BaseModel):
+    incident_id: UUID
+    category: IncidentCategory
+    status: IncidentStatus
+    description: str
+    created_at: datetime
+    location_zone_name: str | None
+    is_community_visible: bool
+    # Por qué no está publicada: PENDIENTE_IA, RECHAZADA_IA, OCULTA_MANUAL o
+    # PUBLICADA_MANUAL. Se deriva de la métrica IA y de la última decisión humana.
+    moderation_state: str
+    ai_evaluated: bool
+    ai_is_appropriate: bool | None
+    ai_is_incident: bool | None
+    ai_reason: str | None
+    last_decision: ModerationDecisionOut | None
+
+
+class ModerationQueueResponse(BaseModel):
+    total: int
+    ai_moderation_enabled: bool
+    items: list[ModerationQueueItem]
+
+
+class CommunityVisibilityRequest(BaseModel):
+    visible: bool
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class CommunityVisibilityResponse(BaseModel):
+    incident_id: UUID
+    is_community_visible: bool
+    moderation_state: str
+    message: str

@@ -15,6 +15,7 @@ from app.models.ai_metric import AIMetric
 from app.models.assignment import IncidentAssignment
 from app.models.enums import IncidentStatus, JobType, PriorityLevel
 from app.models.incident import Incident
+from app.models.moderation_decision import ModerationDecision
 from app.models.responsible import Responsible
 from app.services.ai import AIClassificationError, classify_incident
 from app.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job, recover_expired_leases
@@ -27,6 +28,17 @@ PRIORITY_SLA_HOURS = {
     PriorityLevel.MEDIUM: 24,
     PriorityLevel.LOW: 72,
 }
+
+
+
+def _has_manual_decision(db, incident_id) -> bool:
+    """Una decisión humana prevalece sobre cualquier reevaluación posterior."""
+    return (
+        db.query(ModerationDecision.id)
+        .filter(ModerationDecision.incident_id == incident_id)
+        .first()
+        is not None
+    )
 
 
 def _safe_load_evidence_bytes(
@@ -204,9 +216,22 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
 
             # Community visibility is opt-in and only becomes available after this
             # durable moderation pass. A failed job leaves the default (private).
-            incident.is_community_visible = bool(
-                incident.community_consent and result.is_appropriate and result.is_incident
-            )
+            #
+            # With AI moderation disabled the classification still runs -- category
+            # and priority are still useful -- but the verdict no longer publishes
+            # anything: every consented incident waits for a human in the admin
+            # moderation queue. A manual decision already recorded is never
+            # overwritten by a later re-run of this job.
+            if _has_manual_decision(db, incident.id):
+                logger.info(
+                    "ai_moderation_skipped_manual_decision incident_id=%s", incident.id
+                )
+            elif settings.ai_moderation_enabled:
+                incident.is_community_visible = bool(
+                    incident.community_consent and result.is_appropriate and result.is_incident
+                )
+            else:
+                incident.is_community_visible = False
 
             if result.confidence >= 0.750 and result.is_incident:
                 incident.category = result.predicted_category
