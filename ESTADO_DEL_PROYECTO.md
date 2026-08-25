@@ -118,6 +118,10 @@ de servicio no**. Tras editar código que ellos usen hay que reiniciarlos con
   confianza según la precisión satelital
 - **Validación de coherencia:** rechaza una zona cuyo centroide quede a más de
   2 km del resto del campus, con escape explícito para un segundo local legítimo
+- **Captura sobre el terreno:** los vértices se registran caminando el perímetro
+  con un teléfono, promediando lecturas, con vista previa de la forma, la
+  superficie y el solape con las zonas vecinas — ver
+  [GUIA_CAPTURA_DE_ZONAS.md](GUIA_CAPTURA_DE_ZONAS.md)
 
 ### 5.5 Procesamiento asíncrono
 - Cola sobre la propia base de datos, sin intermediario adicional
@@ -310,3 +314,4 @@ Ordenadas por lo que más aportaría:
 | [backend/README.md](backend/README.md) | API, procesos, migraciones y despliegue |
 | [frontend/README.md](frontend/README.md) | Puesta en marcha de la aplicación web |
 | [GUIA_ACTUALIZACION_GITHUB.md](GUIA_ACTUALIZACION_GITHUB.md) | Flujo de trabajo con el repositorio |
+| [GUIA_CAPTURA_DE_ZONAS.md](GUIA_CAPTURA_DE_ZONAS.md) | Registrar zonas recorriendo el campus con un teléfono |
