@@ -112,4 +112,3 @@ def test_no_avisa_al_pasar_a_otro_estado() -> None:
     )
 
     assert _acaba_de_resolverse(incidencia) is False
-
