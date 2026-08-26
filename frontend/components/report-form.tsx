@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { useRouter } from "next/navigation";
 import {
   ApiHttpError,
@@ -334,11 +335,10 @@ export function ReportForm() {
             ) : null}
             <label className="grid gap-1 text-sm">
               Contrasena
-              <input
+              <PasswordInput
                 className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                type="password"
                 required
                 minLength={8}
               />

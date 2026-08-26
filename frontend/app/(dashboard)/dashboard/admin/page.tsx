@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PasswordInput } from "@/components/password-input";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdminUser,
@@ -632,9 +633,8 @@ export default function AdminDashboardPage() {
 
             <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
               Contrasena
-              <input
+              <PasswordInput
                 className="admin-login-input"
-                type="password"
                 placeholder="Ingresa tu contrasena"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -1589,9 +1589,8 @@ export default function AdminDashboardPage() {
                 onChange={(e) => setNewEmail(e.target.value)}
                 required
               />
-              <input
+              <PasswordInput
                 className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                type="password"
                 placeholder="Contrasena"
                 minLength={8}
                 value={newPassword}
@@ -1717,9 +1716,8 @@ export default function AdminDashboardPage() {
                     <option value="ACTIVE">ACTIVE</option>
                     <option value="INACTIVE">INACTIVE</option>
                   </select>
-                  <input
+                  <PasswordInput
                     className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm"
-                    type="password"
                     placeholder="Nueva contrasena opcional"
                     minLength={8}
                     value={editPassword}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PasswordInput } from "@/components/password-input";
 import { FormEvent, Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { confirmPasswordReset } from "@/lib/api-client";
@@ -30,7 +31,7 @@ function ResetPasswordForm() {
     <main className="mx-auto flex w-full max-w-md flex-1 items-center px-4 py-12">
       <form onSubmit={submit} className="grid w-full gap-4 rounded-2xl border border-[var(--line)] bg-white p-6">
         <h1 className="font-heading text-2xl font-bold text-emerald-950">Restablecer contraseña</h1>
-        <input type="password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} className="rounded-lg border border-[var(--line)] px-3 py-2" placeholder="Nueva contraseña" />
+        <PasswordInput minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} className="rounded-lg border border-[var(--line)] px-3 py-2" placeholder="Nueva contraseña" />
         {!token ? <p className="text-sm text-red-700">El enlace es inválido o está incompleto.</p> : null}
         {message ? <p className="text-sm text-emerald-800">{message}</p> : null}
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
