@@ -35,6 +35,13 @@ class Settings:
     retention_days: int
     backup_s3_bucket: str | None
     backup_s3_prefix: str
+    storage_backend: str
+    s3_bucket: str | None
+    s3_prefix: str
+    s3_endpoint_url: str | None
+    s3_access_key_id: str | None
+    s3_secret_access_key: str | None
+    s3_region: str
     cors_origins: list[str]
     local_storage_path: Path
     max_image_size_mb: int
@@ -119,6 +126,14 @@ def get_settings() -> Settings:
         retention_days=int(os.getenv("RETENTION_DAYS", "180")),
         backup_s3_bucket=os.getenv("BACKUP_S3_BUCKET"),
         backup_s3_prefix=os.getenv("BACKUP_S3_PREFIX", "campus-evidences"),
+        storage_backend=os.getenv("STORAGE_BACKEND", "local").strip().lower(),
+        s3_bucket=os.getenv("S3_BUCKET"),
+        s3_prefix=os.getenv("S3_PREFIX", "evidences"),
+        s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+        s3_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
+        s3_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+        # R2 exige la region literal "auto"; AWS espera la suya (us-east-1...).
+        s3_region=os.getenv("S3_REGION", "auto"),
         cors_origins=cors_origins,
         local_storage_path=local_storage_path,
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),

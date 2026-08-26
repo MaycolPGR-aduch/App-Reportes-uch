@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import get_settings
 from app.models.enums import IncidentStatus
 from app.models.incident import Incident
-from app.services.storage import LocalStorageProvider
+from app.services.storage import get_storage_provider
 
 
 def purge_expired_incidents(db: Session) -> int:
@@ -23,7 +23,7 @@ def purge_expired_incidents(db: Session) -> int:
         )
         .all()
     )
-    storage = LocalStorageProvider(settings.local_storage_path)
+    storage = get_storage_provider()
     for incident in incidents:
         for evidence in incident.evidences:
             storage.delete(evidence.storage_path)
