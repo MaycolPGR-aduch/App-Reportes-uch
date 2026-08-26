@@ -222,6 +222,7 @@ export type AIProviderStatus = {
 
 export type SystemStatusResponse = {
   api_ok: boolean;
+  overdue_assignments: number;
   server_time: string;
   queue_summary: Array<{
     job_type: "CLASSIFY_INCIDENT" | "SEND_NOTIFICATION";

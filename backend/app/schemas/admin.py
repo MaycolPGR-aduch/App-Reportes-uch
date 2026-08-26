@@ -45,6 +45,7 @@ class AIProviderStatusOut(BaseModel):
 
 class SystemStatusResponse(BaseModel):
     api_ok: bool
+    overdue_assignments: int = 0
     server_time: datetime
     queue_summary: list[JobQueueSummaryItem]
     workers: list[WorkerStatusOut]

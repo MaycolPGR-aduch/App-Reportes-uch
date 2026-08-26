@@ -65,6 +65,7 @@ from app.schemas.admin import (
     WorkerStatusOut,
 )
 from app.services.jobs import enqueue_job
+from app.services.monitoring import asignaciones_vencidas
 from app.services.location_resolver import (
     distance_meters,
     polygon_centroid,
@@ -534,8 +535,15 @@ def get_system_status(
             "decisión manual en la cola de moderación."
         )
 
+    vencidas = len(asignaciones_vencidas(db, ahora=now))
+    if vencidas:
+        notes.append(
+            f"{vencidas} asignación(es) con el plazo de atención vencido."
+        )
+
     return SystemStatusResponse(
         api_ok=True,
+        overdue_assignments=vencidas,
         server_time=now,
         queue_summary=queue_summary,
         workers=[ai_worker, notification_worker],

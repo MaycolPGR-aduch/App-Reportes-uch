@@ -778,6 +778,12 @@ export default function AdminDashboardPage() {
                 ({system.ai.model})
               </p>
               <p>
+                Asignaciones con plazo vencido:{" "}
+                <strong className={system.overdue_assignments > 0 ? "text-red-700" : ""}>
+                  {system.overdue_assignments}
+                </strong>
+              </p>
+              <p>
                 Clasificaciones fallidas 24h:{" "}
                 <strong className={system.ai.failed_classifications_24h > 0 ? "text-red-700" : ""}>
                   {system.ai.failed_classifications_24h}

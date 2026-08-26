@@ -15,9 +15,40 @@ from app.models.incident import Incident
 from app.models.job import Job
 from app.models.notification import Notification
 from app.services.jobs import claim_next_job, complete_job, fail_job, recover_expired_leases
-from app.services.notifications import resolve_recipients, send_email_notification
+from app.services.notifications import (
+    KIND_INCIDENCIA_RESUELTA,
+    KIND_PLAZO_VENCIDO,
+    resolve_recipients,
+    send_email_notification,
+    send_overdue_notification,
+    send_resolved_notification,
+)
 
 logger = logging.getLogger("campus.workers.notification")
+
+
+
+def _despachar(job: Job, *, incident: Incident, recipient: str):
+    """Elige el mensaje según el tipo declarado en el trabajo.
+
+    Sin `kind` se asume el aviso de incidencia nueva, que es el comportamiento
+    que tenían los trabajos encolados antes de existir los demás tipos.
+    """
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    kind = payload.get("kind")
+
+    if kind == KIND_INCIDENCIA_RESUELTA:
+        return send_resolved_notification(incident=incident, recipient=recipient)
+
+    if kind == KIND_PLAZO_VENCIDO:
+        return send_overdue_notification(
+            incident=incident,
+            recipient=recipient,
+            responsible_name=str(payload.get("responsible_name") or "Sin responsable"),
+            due_at=datetime.fromisoformat(payload["due_at"]),
+        )
+
+    return send_email_notification(incident=incident, recipient=recipient)
 
 
 def _process_job(db: Session, job: Job) -> None:
@@ -71,7 +102,8 @@ def _process_job(db: Session, job: Job) -> None:
 
     errors = []
     for recipient in recipients:
-        event_key = f"job:{job.id}:recipient:{recipient.lower()}"
+        kind = (job.payload or {}).get("kind", "NUEVA_INCIDENCIA") if isinstance(job.payload, dict) else "NUEVA_INCIDENCIA"
+        event_key = f"{kind}:job:{job.id}:recipient:{recipient.lower()}"
         notification = db.query(Notification).filter(Notification.event_key == event_key).first()
         if notification and notification.status == NotificationStatus.SENT:
             continue
@@ -95,7 +127,7 @@ def _process_job(db: Session, job: Job) -> None:
             notification.status = NotificationStatus.SENDING
             notification.error_message = None
         db.commit()
-        send_result = send_email_notification(incident=incident, recipient=recipient)
+        send_result = _despachar(job, incident=incident, recipient=recipient)
         notification.status = send_result.status
         notification.provider_message_id = send_result.provider_message_id
         notification.error_message = send_result.error_message
