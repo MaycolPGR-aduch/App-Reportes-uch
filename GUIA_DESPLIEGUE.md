@@ -95,8 +95,15 @@ arranque y las crea en el primer despliegue.
    | `S3_ACCESS_KEY_ID` | Del token de R2 |
    | `S3_SECRET_ACCESS_KEY` | Del token de R2 |
    | `CORS_ORIGINS` | Provisional: `https://localhost` — se corrige en el paso 5 |
-   | `TRUSTED_HOSTS` | El dominio de Render, p. ej. `campus-alertas-api.onrender.com` |
+   | `TRUSTED_HOSTS` | **Vacío** — se rellena en el paso 5 |
    | `ALLOWED_EMAIL_DOMAINS` | `uch.edu.pe` |
+
+   > **No adivines `TRUSTED_HOSTS` aquí.** `TrustedHostMiddleware` filtra *todas*
+   > las peticiones, incluida la del health check de Render. Un dominio que no
+   > coincida devuelve `400` a todo y Render da el despliegue por fallido, en
+   > bucle — y en este paso el dominio todavía no existe. `app/main.py` solo monta
+   > el middleware `if settings.trusted_hosts:`, así que con la variable vacía el
+   > filtro ni se activa.
 
    `JWT_SECRET` se genera solo (`generateValue: true`); no hay que inventarlo.
 
@@ -161,11 +168,15 @@ desactivarla.
 
 ## Paso 5 — Cerrar el círculo
 
-Volver a Render y corregir `CORS_ORIGINS` con la URL real de Vercel:
+Volver a Render y rellenar las dos variables que dependían de datos que hasta
+ahora no existían:
 
 ```
-https://campus-alertas.vercel.app
+CORS_ORIGINS  = https://campus-alertas.vercel.app
+TRUSTED_HOSTS = campus-alertas-api.onrender.com
 ```
+
+`CORS_ORIGINS` lleva el esquema `https://`; `TRUSTED_HOSTS` es solo el dominio.
 
 **Sin barra final.** La comprobación de origen compara la cadena exacta; una barra
 de más rechaza todas las peticiones con un error de CORS que en el navegador se
