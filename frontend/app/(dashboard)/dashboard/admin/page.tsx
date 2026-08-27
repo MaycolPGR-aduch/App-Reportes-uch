@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { PasswordInput } from "@/components/password-input";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -721,12 +720,6 @@ export default function AdminDashboardPage() {
           >
             Usuarios
           </button>
-          <Link
-            href="/dashboard"
-            className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold"
-          >
-            Dashboard base
-          </Link>
           <button
             onClick={clearSession}
             className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold"
