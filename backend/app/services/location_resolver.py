@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -69,6 +70,37 @@ def _extract_polygons(polygon_geojson: Any) -> list[list[list[tuple[float, float
 
 def validate_polygon_geojson(polygon_geojson: dict[str, Any]) -> None:
     _extract_polygons(polygon_geojson)
+
+
+def polygon_centroid(polygon_geojson: dict[str, Any]) -> tuple[float, float]:
+    """Average vertex position of a zone, as (latitude, longitude).
+
+    Good enough to compare where two zones sit relative to each other; it is
+    not an area-weighted centroid and is not used for point-in-polygon work.
+    """
+    polygons = _extract_polygons(polygon_geojson)
+    xs: list[float] = []
+    ys: list[float] = []
+    for rings in polygons:
+        # The outer ring repeats its first point as the last one; drop it so a
+        # small polygon is not skewed toward that vertex.
+        for x, y in rings[0][:-1]:
+            xs.append(x)
+            ys.append(y)
+    if not xs:
+        raise ValueError("Polygon has no usable vertices")
+    return sum(ys) / len(ys), sum(xs) / len(xs)
+
+
+def distance_meters(first: tuple[float, float], second: tuple[float, float]) -> float:
+    """Great-circle distance between two (latitude, longitude) pairs."""
+    earth_radius_m = 6_371_000.0
+    lat1, lon1 = math.radians(first[0]), math.radians(first[1])
+    lat2, lon2 = math.radians(second[0]), math.radians(second[1])
+    sin_lat = math.sin((lat2 - lat1) / 2) ** 2
+    sin_lon = math.sin((lon2 - lon1) / 2) ** 2
+    haversine = sin_lat + math.cos(lat1) * math.cos(lat2) * sin_lon
+    return 2 * earth_radius_m * math.asin(math.sqrt(haversine))
 
 
 def _point_on_segment(

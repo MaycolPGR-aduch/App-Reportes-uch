@@ -35,6 +35,13 @@ class Settings:
     retention_days: int
     backup_s3_bucket: str | None
     backup_s3_prefix: str
+    storage_backend: str
+    s3_bucket: str | None
+    s3_prefix: str
+    s3_endpoint_url: str | None
+    s3_access_key_id: str | None
+    s3_secret_access_key: str | None
+    s3_region: str
     cors_origins: list[str]
     local_storage_path: Path
     max_image_size_mb: int
@@ -46,6 +53,11 @@ class Settings:
     ai_request_timeout_seconds: float
     ai_max_output_tokens: int
     auto_assign_enabled: bool
+    ai_moderation_enabled: bool
+    alerts_enabled: bool
+    alert_silence_hours: int
+    monitor_interval_minutes: int
+    reporter_updates_enabled: bool
     brevo_api_key: str | None
     brevo_from_email: str | None
     brevo_from_name: str
@@ -114,6 +126,14 @@ def get_settings() -> Settings:
         retention_days=int(os.getenv("RETENTION_DAYS", "180")),
         backup_s3_bucket=os.getenv("BACKUP_S3_BUCKET"),
         backup_s3_prefix=os.getenv("BACKUP_S3_PREFIX", "campus-evidences"),
+        storage_backend=os.getenv("STORAGE_BACKEND", "local").strip().lower(),
+        s3_bucket=os.getenv("S3_BUCKET"),
+        s3_prefix=os.getenv("S3_PREFIX", "evidences"),
+        s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+        s3_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
+        s3_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+        # R2 exige la region literal "auto"; AWS espera la suya (us-east-1...).
+        s3_region=os.getenv("S3_REGION", "auto"),
         cors_origins=cors_origins,
         local_storage_path=local_storage_path,
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),
@@ -127,6 +147,11 @@ def get_settings() -> Settings:
         ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "30")),
         ai_max_output_tokens=int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")),
         auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
+        ai_moderation_enabled=_as_bool(os.getenv("AI_MODERATION_ENABLED"), default=True),
+        alerts_enabled=_as_bool(os.getenv("ALERTS_ENABLED"), default=True),
+        alert_silence_hours=int(os.getenv("ALERT_SILENCE_HOURS", "6")),
+        monitor_interval_minutes=int(os.getenv("MONITOR_INTERVAL_MINUTES", "15")),
+        reporter_updates_enabled=_as_bool(os.getenv("REPORTER_UPDATES_ENABLED"), default=True),
         brevo_api_key=os.getenv("BREVO_API_KEY"),
         brevo_from_email=os.getenv("BREVO_FROM_EMAIL"),
         brevo_from_name=os.getenv("BREVO_FROM_NAME", "Campus Alertas"),

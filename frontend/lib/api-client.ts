@@ -20,6 +20,8 @@ export type IncidentListItem = {
   reporter_campus_id: string;
   location_zone_name: string | null;
   location_status: string | null;
+  assignment_count: number;
+  assigned_to: string[];
 };
 
 export type IncidentListResponse = {
@@ -136,6 +138,38 @@ export type IncidentDetail = {
   }>;
 };
 
+export type ModerationDecisionInfo = {
+  actor_label: string;
+  published: boolean;
+  reason: string | null;
+  ai_verdict: string | null;
+  created_at: string;
+};
+
+export type ModerationQueueItem = {
+  incident_id: string;
+  category: IncidentCategory;
+  status: IncidentStatus;
+  description: string;
+  created_at: string;
+  location_zone_name: string | null;
+  is_community_visible: boolean;
+  evidence_id: string | null;
+  moderation_state: string;
+  ai_evaluated: boolean;
+  ai_is_appropriate: boolean | null;
+  ai_is_incident: boolean | null;
+  ai_reason: string | null;
+  last_decision: ModerationDecisionInfo | null;
+};
+
+export type ModerationQueueResponse = {
+  total: number;
+  ai_moderation_enabled: boolean;
+  ai_provider_failing: boolean;
+  items: ModerationQueueItem[];
+};
+
 export type SessionResponse = {
   message: string;
   role: UserRole;
@@ -188,6 +222,7 @@ export type AIProviderStatus = {
 
 export type SystemStatusResponse = {
   api_ok: boolean;
+  overdue_assignments: number;
   server_time: string;
   queue_summary: Array<{
     job_type: "CLASSIFY_INCIDENT" | "SEND_NOTIFICATION";
@@ -827,5 +862,33 @@ export async function resolveIncidentLocationZone(
 ): Promise<IncidentLocationResolveResponse> {
   return request<IncidentLocationResolveResponse>(`/admin/incidents/${incidentId}/resolve-location`, {
     method: "POST",
+  });
+}
+
+export async function listModerationQueue(params?: {
+  include_published?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<ModerationQueueResponse> {
+  const query = new URLSearchParams();
+  if (params?.include_published) query.set("include_published", "true");
+  query.set("limit", String(params?.limit ?? 100));
+  query.set("offset", String(params?.offset ?? 0));
+  return request<ModerationQueueResponse>(`/admin/moderation-queue?${query.toString()}`);
+}
+
+export async function setCommunityVisibility(
+  incidentId: string,
+  payload: { visible: boolean; reason?: string },
+): Promise<{
+  incident_id: string;
+  is_community_visible: boolean;
+  moderation_state: string;
+  message: string;
+}> {
+  return request(`/admin/incidents/${incidentId}/community-visibility`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }

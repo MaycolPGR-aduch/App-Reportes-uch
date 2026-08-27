@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import and_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -24,6 +24,7 @@ from app.models.enums import (
 )
 from app.models.evidence import IncidentEvidence
 from app.models.assignment import IncidentAssignment
+from app.models.responsible import Responsible
 from app.models.community_reaction import CommunityReaction
 from app.models.incident import Incident
 from app.models.location import IncidentLocation
@@ -51,7 +52,7 @@ from app.services.sanitizer import sanitize_description, sanitize_title
 from app.services.captcha import verify_turnstile
 from app.services.images import InvalidImageError, normalize_image
 from app.services.rate_limit import client_identifier, enforce_rate_limit
-from app.services.storage import LocalStorageProvider
+from app.services.storage import EvidenceNotStored, get_storage_provider
 
 router = APIRouter(tags=["reports"])
 
@@ -223,7 +224,7 @@ async def create_report(
     except InvalidImageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    storage = LocalStorageProvider(settings.local_storage_path)
+    storage = get_storage_provider()
     stored = None
     try:
         stored = storage.save_incident_image(
@@ -357,6 +358,20 @@ def list_incidents(
         .all()
     )
 
+    # Responsables por incidencia en una sola consulta, para no repetir una por
+    # fila del listado.
+    assignees: dict[UUID, list[str]] = {}
+    incident_ids = [inc.id for inc in incidents]
+    if incident_ids:
+        rows = (
+            db.query(IncidentAssignment.incident_id, Responsible.full_name)
+            .join(Responsible, Responsible.id == IncidentAssignment.responsible_id)
+            .filter(IncidentAssignment.incident_id.in_(incident_ids))
+            .all()
+        )
+        for incident_id, full_name in rows:
+            assignees.setdefault(incident_id, []).append(full_name)
+
     items = [
         IncidentListItem(
             id=inc.id,
@@ -368,6 +383,8 @@ def list_incidents(
             reporter_campus_id=inc.reporter.campus_id if inc.reporter else "ANONYMOUS",
             location_zone_name=inc.location.resolved_zone_name if inc.location else None,
             location_status=inc.location.location_status if inc.location else None,
+            assignment_count=len(assignees.get(inc.id, [])),
+            assigned_to=sorted(assignees.get(inc.id, [])),
         )
         for inc in incidents
     ]
@@ -411,18 +428,17 @@ def _safe_feed_limit_offset(limit: int, offset: int) -> tuple[int, int]:
     return min(max(limit, 1), 30), max(offset, 0)
 
 
-def _feed_image_response(incident: Incident) -> FileResponse:
+def _feed_image_response(incident: Incident) -> Response:
     evidence = next(iter(sorted(incident.evidences, key=lambda item: item.created_at)), None)
     if evidence is None:
         raise HTTPException(status_code=404, detail="Feed image not found")
-    settings = get_settings()
-    evidence_path = (settings.local_storage_path.parent / evidence.storage_path).resolve()
-    base_data_path = settings.local_storage_path.parent.resolve()
-    if base_data_path not in evidence_path.parents and evidence_path != base_data_path:
-        raise HTTPException(status_code=400, detail="Invalid evidence path")
-    if not evidence_path.exists():
-        raise HTTPException(status_code=404, detail="Evidence file missing on disk")
-    return FileResponse(path=evidence_path, media_type=evidence.mime_type)
+    try:
+        content = get_storage_provider().read(evidence.storage_path)
+    except EvidenceNotStored as exc:
+        raise HTTPException(
+            status_code=404, detail="Evidence file missing from storage"
+        ) from exc
+    return Response(content=content, media_type=evidence.mime_type)
 
 
 @router.get("/incidents/mine/feed", response_model=StudentFeedResponse)
@@ -516,7 +532,7 @@ def get_my_incident_feed_image(
     incident_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> Response:
     user = _require_student(current_user)
     incident = (
         db.query(Incident)
@@ -534,7 +550,7 @@ def get_admin_incident_feed_image(
     incident_id: UUID,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
-) -> FileResponse:
+) -> Response:
     incident = (
         db.query(Incident)
         .options(selectinload(Incident.evidences))
@@ -654,7 +670,7 @@ def get_community_feed_image(
     incident_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> Response:
     _require_student(current_user)
     return _feed_image_response(_get_visible_community_incident(db, incident_id))
 
@@ -769,7 +785,7 @@ def get_incident_evidence_file(
     evidence_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> Response:
     evidence = (
         db.query(IncidentEvidence)
         .filter(
@@ -785,18 +801,17 @@ def get_incident_evidence_file(
     if incident is None or not _can_access_incident(db, incident, current_user):
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    settings = get_settings()
-    evidence_path = (settings.local_storage_path.parent / evidence.storage_path).resolve()
-    base_data_path = settings.local_storage_path.parent.resolve()
-    if base_data_path not in evidence_path.parents and evidence_path != base_data_path:
-        raise HTTPException(status_code=400, detail="Invalid evidence path")
-    if not evidence_path.exists():
-        raise HTTPException(status_code=404, detail="Evidence file missing on disk")
+    try:
+        content = get_storage_provider().read(evidence.storage_path)
+    except EvidenceNotStored as exc:
+        raise HTTPException(
+            status_code=404, detail="Evidence file missing from storage"
+        ) from exc
 
     extension = Path(evidence.storage_path).suffix
     filename = f"incident-{incident_id}-evidence-{evidence_id}{extension}"
-    return FileResponse(
-        path=evidence_path,
+    return Response(
+        content=content,
         media_type=evidence.mime_type,
-        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

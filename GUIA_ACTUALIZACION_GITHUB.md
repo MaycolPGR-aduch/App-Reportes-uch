@@ -222,6 +222,24 @@ Si la base existente fue creada manualmente, comprueba que su estructura coincid
 la revisión antes de usar `alembic stamp`. Marcar una revisión inexistente en la estructura puede
 dejar la base inconsistente.
 
+### Si la migración falla por permisos
+
+Las tablas suelen pertenecer a `postgres`, mientras que la aplicación se conecta como
+`campus_app`. Crear una clave foránea exige el privilegio `REFERENCES` sobre la tabla destino, así
+que una migración que la necesite falla con `permiso denegado a la tabla ...` aunque `campus_app`
+pueda leer y escribir con normalidad.
+
+`sql/grant_permissions.sql` ya lo concede. Si la base es anterior a esa corrección, ejecuta una vez
+como `postgres` (por ejemplo desde pgAdmin):
+
+```sql
+GRANT REFERENCES ON ALL TABLES IN SCHEMA public TO campus_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT REFERENCES ON TABLES TO campus_app;
+```
+
+La segunda línea evita repetirlo con cada tabla nueva. `REFERENCES` solo habilita apuntar claves
+foráneas a esas tablas: no concede acceso a datos ni permite alterarlas.
+
 ## 10. Correcciones después de publicar
 
 Si el commit todavía no fue fusionado, corrige los archivos, valida nuevamente, crea otro commit y

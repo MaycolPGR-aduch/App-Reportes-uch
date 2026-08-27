@@ -5,6 +5,8 @@ from app.models.account_token import AccountToken
 from app.models.auth_session import AuthSession
 from app.models.campus_zone import CampusZone
 from app.models.community_reaction import CommunityReaction
+from app.models.moderation_decision import ModerationDecision
+from app.models.system_alert import SystemAlert
 from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job
@@ -31,3 +33,6 @@ __all__ = [
     "AIMetric",
     "Job",
 ]
+
+# Registra el escucha que avisa al reportante al resolverse su incidencia.
+from app.services import incident_events  # noqa: E402,F401

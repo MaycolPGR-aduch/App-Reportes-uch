@@ -45,6 +45,7 @@ class AIProviderStatusOut(BaseModel):
 
 class SystemStatusResponse(BaseModel):
     api_ok: bool
+    overdue_assignments: int = 0
     server_time: datetime
     queue_summary: list[JobQueueSummaryItem]
     workers: list[WorkerStatusOut]
@@ -203,6 +204,7 @@ class CampusZoneCreateRequest(BaseModel):
     priority: int = Field(default=100, ge=0, le=1000)
     polygon_geojson: dict
     is_active: bool = True
+    allow_distant_zone: bool = False
 
 
 class CampusZoneUpdateRequest(BaseModel):
@@ -211,6 +213,7 @@ class CampusZoneUpdateRequest(BaseModel):
     priority: int | None = Field(default=None, ge=0, le=1000)
     polygon_geojson: dict | None = None
     is_active: bool | None = None
+    allow_distant_zone: bool = False
 
 
 class IncidentLocationResolveResponse(BaseModel):
@@ -219,4 +222,50 @@ class IncidentLocationResolveResponse(BaseModel):
     zone_name: str | None
     location_status: str
     location_confidence: float | None
+    message: str
+
+
+class ModerationDecisionOut(BaseModel):
+    actor_label: str
+    published: bool
+    reason: str | None
+    ai_verdict: str | None
+    created_at: datetime
+
+
+class ModerationQueueItem(BaseModel):
+    incident_id: UUID
+    category: IncidentCategory
+    status: IncidentStatus
+    description: str
+    created_at: datetime
+    location_zone_name: str | None
+    is_community_visible: bool
+    evidence_id: UUID | None = None
+    # Por qué no está publicada: PENDIENTE_IA, RECHAZADA_IA, OCULTA_MANUAL o
+    # PUBLICADA_MANUAL. Se deriva de la métrica IA y de la última decisión humana.
+    moderation_state: str
+    ai_evaluated: bool
+    ai_is_appropriate: bool | None
+    ai_is_incident: bool | None
+    ai_reason: str | None
+    last_decision: ModerationDecisionOut | None
+
+
+class ModerationQueueResponse(BaseModel):
+    total: int
+    ai_moderation_enabled: bool
+    ai_provider_failing: bool = False
+    items: list[ModerationQueueItem]
+
+
+class CommunityVisibilityRequest(BaseModel):
+    visible: bool
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class CommunityVisibilityResponse(BaseModel):
+    incident_id: UUID
+    is_community_visible: bool
+    moderation_state: str
     message: str

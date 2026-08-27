@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { useRouter } from "next/navigation";
 import { CurrentUser, UserRole, getCurrentUser, login, logout } from "@/lib/api-client";
 import { StudentIncidentsFeed } from "@/components/student-incidents-feed";
@@ -86,9 +87,8 @@ export default function DashboardPage() {
 
             <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
               Contrasena
-              <input
+              <PasswordInput
                 className="admin-login-input"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 minLength={8}

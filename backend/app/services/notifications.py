@@ -106,11 +106,8 @@ def _compose_html(incident: Incident) -> str:
     )
 
 
-def send_email_notification(
-    *,
-    incident: Incident,
-    recipient: str,
-) -> EmailSendResult:
+def _send_via_brevo(*, recipient: str, subject: str, html: str) -> EmailSendResult:
+    """Envío en bruto. Cada tipo de aviso compone su asunto y cuerpo y delega aquí."""
     settings = get_settings()
     if not settings.brevo_api_key or not settings.brevo_from_email:
         return EmailSendResult(
@@ -118,12 +115,20 @@ def send_email_notification(
             provider_message_id=None,
             error_message="BREVO_API_KEY or BREVO_FROM_EMAIL not configured",
         )
+    if not settings.alerts_enabled:
+        # Interruptor general: la evaluación sigue corriendo y el panel sigue
+        # reportando, pero no se gasta cuota del proveedor en desarrollo.
+        return EmailSendResult(
+            status=NotificationStatus.FAILED,
+            provider_message_id=None,
+            error_message="ALERTS_ENABLED=false: envío suprimido",
+        )
 
     payload = {
         "sender": {"email": settings.brevo_from_email, "name": settings.brevo_from_name},
         "to": [{"email": recipient}],
-        "subject": f"[{incident.priority.value}] Incidencia {incident.category.value} - {incident.id}",
-        "htmlContent": _compose_html(incident),
+        "subject": subject,
+        "htmlContent": html,
     }
     headers = {
         "api-key": settings.brevo_api_key,
@@ -161,6 +166,118 @@ def send_email_notification(
             provider_message_id=None,
             error_message=str(exc)[:250],
         )
+
+
+def send_email_notification(*, incident: Incident, recipient: str) -> EmailSendResult:
+    """Aviso al personal de que hay una incidencia nueva que atender."""
+    return _send_via_brevo(
+        recipient=recipient,
+        subject=f"[{incident.priority.value}] Incidencia {incident.category.value} - {incident.id}",
+        html=_compose_html(incident),
+    )
+
+
+# --------------------------------------------------------- Tipos de aviso
+# El tipo viaja en jobs.payload["kind"], que ya es JSONB y ya lo lee el worker.
+
+KIND_NUEVA_INCIDENCIA = "NUEVA_INCIDENCIA"
+KIND_INCIDENCIA_RESUELTA = "INCIDENCIA_RESUELTA"
+KIND_PLAZO_VENCIDO = "PLAZO_VENCIDO"
+
+
+def send_resolved_notification(*, incident: Incident, recipient: str) -> EmailSendResult:
+    """Aviso a quien reportó de que su incidencia quedó resuelta.
+
+    Deliberadamente escueto: sin datos del personal, sin traza de clasificación
+    y sin enlace al panel, porque quien lo recibe no tiene acceso a él.
+    """
+    zona = escape(
+        (incident.location.resolved_zone_name if incident.location else None)
+        or "el campus"
+    )
+    html = (
+        "<h2>Tu reporte fue atendido</h2>"
+        "<p>La incidencia que reportaste fue marcada como resuelta.</p>"
+        f"<p><strong>Lo que reportaste:</strong> {escape(incident.description)}</p>"
+        f"<p><strong>Dónde:</strong> {zona}</p>"
+        f"<p><strong>Categoría:</strong> {escape(incident.category.value)}</p>"
+        "<p>Gracias por avisar: los reportes de la comunidad son lo que permite "
+        "detectar y corregir estos problemas.</p>"
+    )
+    return _send_via_brevo(
+        recipient=recipient,
+        subject="Tu reporte en el campus fue atendido",
+        html=html,
+    )
+
+
+def send_overdue_notification(
+    *,
+    incident: Incident,
+    recipient: str,
+    responsible_name: str,
+    due_at: datetime,
+) -> EmailSendResult:
+    """Aviso de que una asignación pasó su plazo de atención.
+
+    No altera la incidencia: solo informa. Se envía una vez por asignación.
+    """
+    settings = get_settings()
+    detail_url = escape(f"{settings.dashboard_base_url}/{incident.id}", quote=True)
+    zona = escape(
+        (incident.location.resolved_zone_name if incident.location else None)
+        or "Zona no definida"
+    )
+    html = (
+        "<h2>Asignación con plazo vencido</h2>"
+        f"<p><strong>Responsable:</strong> {escape(responsible_name)}</p>"
+        f"<p><strong>Vencía:</strong> {escape(due_at.strftime('%d/%m/%Y %H:%M'))}</p>"
+        f"<p><strong>Prioridad:</strong> {escape(incident.priority.value)}</p>"
+        f"<p><strong>Zona:</strong> {zona}</p>"
+        f"<p><strong>Incidencia:</strong> {escape(incident.description)}</p>"
+        "<p>La incidencia no fue modificada: sigue con su prioridad y estado "
+        "actuales. Este aviso se envía una sola vez.</p>"
+        f"<p><a href='{detail_url}'>Abrir en dashboard</a></p>"
+    )
+    return _send_via_brevo(
+        recipient=recipient,
+        subject=f"[Plazo vencido] Incidencia {incident.category.value} - {incident.id}",
+        html=html,
+    )
+
+
+def send_system_alert(
+    *,
+    recipient: str,
+    kind: str,
+    titulo: str,
+    detalle: str,
+    consecuencia: str,
+    recuperado: bool = False,
+) -> EmailSendResult:
+    """Aviso sobre la salud del sistema, o su recuperación.
+
+    Nombrar la consecuencia práctica es lo que distingue una alerta útil de un
+    volcado de estado: quien la lee necesita saber qué deja de funcionar.
+    """
+    if recuperado:
+        html = (
+            f"<h2>Resuelto: {escape(titulo)}</h2>"
+            f"<p>{escape(detalle)}</p>"
+            "<p>El sistema volvió a operar con normalidad. No hace falta ninguna acción.</p>"
+        )
+        asunto = f"[Resuelto] {titulo}"
+    else:
+        html = (
+            f"<h2>{escape(titulo)}</h2>"
+            f"<p>{escape(detalle)}</p>"
+            f"<p><strong>Qué implica:</strong> {escape(consecuencia)}</p>"
+            "<p>Revisa la pestaña Sistema del panel de administración para el "
+            "detalle completo.</p>"
+        )
+        asunto = f"[Campus Alertas] {titulo}"
+
+    return _send_via_brevo(recipient=recipient, subject=asunto, html=html)
 
 
 def register_notification(
