@@ -123,10 +123,13 @@ class S3StorageProvider(StorageProvider):
     ) -> None:
         try:
             import boto3
+            from botocore.exceptions import ClientError
         except ImportError as exc:  # pragma: no cover - dependencia declarada
             raise RuntimeError(
                 "boto3 is required when STORAGE_BACKEND=s3"
             ) from exc
+
+        self._client_error = ClientError
 
         self.bucket = bucket
         self.prefix = prefix.strip("/")
@@ -154,13 +157,24 @@ class S3StorageProvider(StorageProvider):
             mime_type=mime_type,
         )
 
+    #: Cómo dice cada proveedor "esa clave no existe". R2 y AWS levantan
+    #: NoSuchKey, pero otros almacenes compatibles devuelven un error genérico
+    #: con estado 404. Sin cubrir ambos, una foto ausente daría 500 en vez de 404.
+    _AUSENTE = {"NoSuchKey", "NoSuchBucket", "NotFound", "404"}
+
     def read(self, relative_path: str) -> bytes:
         try:
             response = self._client.get_object(
                 Bucket=self.bucket, Key=relative_path.lstrip("/")
             )
-        except self._client.exceptions.NoSuchKey as exc:
-            raise EvidenceNotStored(relative_path) from exc
+        except self._client_error as exc:
+            error = exc.response.get("Error", {})
+            estado = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if error.get("Code") in self._AUSENTE or estado == 404:
+                raise EvidenceNotStored(relative_path) from exc
+            # Un fallo de red o de credenciales no es un archivo ausente: que
+            # suba como 500 en vez de disfrazarse de "esta foto no está".
+            raise
         return response["Body"].read()
 
     def delete(self, relative_path: str) -> None:

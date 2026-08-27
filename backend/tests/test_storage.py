@@ -3,9 +3,11 @@ objetos. El riesgo del cambio no es guardar mal: es que `storage_path` deje de
 significar lo mismo en cada almacén y las imágenes ya guardadas se vuelvan
 irrecuperables. Estas pruebas fijan ese contrato."""
 
+import io
 import re
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.services.storage import (
     EvidenceNotStored,
@@ -80,15 +82,16 @@ def test_borrar_dos_veces_no_falla(tmp_path) -> None:
 # ------------------------------------------------------------ almacén S3
 
 class _ClienteFalso:
-    """Imita lo justo de boto3 para comprobar qué se le pide."""
+    """Imita lo justo de boto3 para comprobar qué se le pide.
 
-    class exceptions:
-        class NoSuchKey(Exception):
-            pass
+    `ausencia` decide cómo dice este proveedor que la clave no existe: R2 y AWS
+    levantan NoSuchKey, otros almacenes compatibles devuelven un 404 genérico.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self, ausencia: str = "NoSuchKey") -> None:
         self.objetos: dict[str, bytes] = {}
         self.tipos: dict[str, str] = {}
+        self.ausencia = ausencia
 
     def put_object(self, *, Bucket, Key, Body, ContentType):
         self.objetos[Key] = Body
@@ -96,21 +99,31 @@ class _ClienteFalso:
 
     def get_object(self, *, Bucket, Key):
         if Key not in self.objetos:
-            raise self.exceptions.NoSuchKey()
-        return {"Body": __import__("io").BytesIO(self.objetos[Key])}
+            raise _error_s3(self.ausencia, 404)
+        return {"Body": io.BytesIO(self.objetos[Key])}
 
     def delete_object(self, *, Bucket, Key):
         self.objetos.pop(Key, None)
 
 
-@pytest.fixture
-def almacen_s3(monkeypatch):
+def _error_s3(codigo: str, estado: int) -> ClientError:
+    return ClientError(
+        {"Error": {"Code": codigo}, "ResponseMetadata": {"HTTPStatusCode": estado}},
+        "GetObject",
+    )
+
+
+def _montar(monkeypatch, cliente):
     import boto3
 
-    cliente = _ClienteFalso()
     monkeypatch.setattr(boto3, "client", lambda *a, **k: cliente)
-    proveedor = S3StorageProvider(bucket="campus", endpoint_url="https://r2.example")
-    return proveedor, cliente
+    return S3StorageProvider(bucket="campus", endpoint_url="https://s3.example")
+
+
+@pytest.fixture
+def almacen_s3(monkeypatch):
+    cliente = _ClienteFalso()
+    return _montar(monkeypatch, cliente), cliente
 
 
 def test_s3_guarda_y_recupera_los_mismos_bytes(almacen_s3) -> None:
@@ -154,3 +167,25 @@ def test_s3_borrar_algo_ausente_no_falla(almacen_s3) -> None:
     almacen, _ = almacen_s3
 
     almacen.delete("evidences/2026/01/01/" + "0" * 32 + ".webp")
+
+
+def test_s3_reconoce_la_ausencia_aunque_el_proveedor_no_use_nosuchkey(monkeypatch) -> None:
+    """Regresión: solo se capturaba NoSuchKey, el nombre que usan R2 y AWS. Un
+    almacén que responda un 404 genérico habría dado 500 en vez de 404."""
+    almacen = _montar(monkeypatch, _ClienteFalso(ausencia="NotFound"))
+
+    with pytest.raises(EvidenceNotStored):
+        almacen.read("evidences/2026/01/01/" + "0" * 32 + ".webp")
+
+
+def test_s3_no_disfraza_un_fallo_real_de_foto_ausente(monkeypatch) -> None:
+    """Credenciales malas o red caída deben subir como error, no convertirse en
+    un 404 que haría pensar que la evidencia se perdió."""
+    cliente = _ClienteFalso()
+    cliente.get_object = lambda **kw: (_ for _ in ()).throw(
+        _error_s3("AccessDenied", 403)
+    )
+    almacen = _montar(monkeypatch, cliente)
+
+    with pytest.raises(ClientError):
+        almacen.read("evidences/2026/01/01/" + "0" * 32 + ".webp")
