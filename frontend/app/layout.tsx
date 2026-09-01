@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { PwaRegister } from "@/components/pwa-register";
+import { NavSession } from "@/components/nav-session";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
               <Link className="rounded-full px-3 py-1.5 hover:bg-emerald-100" href="/">
                 Reportar
               </Link>
+              <NavSession />
               <Link
                 className="rounded-full bg-emerald-700 px-3 py-1.5 text-white hover:bg-emerald-800"
                 href="/dashboard"

@@ -1,17 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { PasswordInput } from "@/components/password-input";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ApiHttpError,
   IncidentCategory,
   UserRole,
   createReport,
   getCurrentUser,
-  login,
   logout,
-  registerUser,
 } from "@/lib/api-client";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 
@@ -22,22 +19,13 @@ type Coordinates = {
 };
 
 type ReportMode = "ANONYMOUS" | "AUTHENTICATED";
-type AuthTab = "LOGIN" | "REGISTER";
 
 export function ReportForm() {
-  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [campusIdStored, setCampusIdStored] = useState<string | null>(null);
   const [mode, setMode] = useState<ReportMode>("ANONYMOUS");
 
-  const [campusId, setCampusId] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [authTab, setAuthTab] = useState<AuthTab>("LOGIN");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
 
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<IncidentCategory>("INFRASTRUCTURE");
@@ -76,55 +64,6 @@ export function ReportForm() {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
-
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setAuthLoading(true);
-    setAuthError(null);
-    try {
-      const response = await login(campusId.trim(), password);
-      setToken("cookie-session");
-      setRole(response.role);
-      setCampusIdStored(response.campus_id);
-      setPassword("");
-      setMode("AUTHENTICATED");
-      setSubmitSuccess("Sesion iniciada. Puedes reportar inmediatamente.");
-
-      if (response.role === "ADMIN") {
-        router.push("/dashboard");
-      } else if (response.role === "STAFF") {
-        router.push("/dashboard/staff");
-      } else {
-        router.push("/");
-      }
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "No se pudo iniciar sesion");
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setAuthLoading(true);
-    setAuthError(null);
-    try {
-      const response = await registerUser({
-        campus_id: campusId.trim(),
-        full_name: fullName.trim(),
-        email: email.trim(),
-        password,
-      });
-      setPassword("");
-      setSubmitSuccess(response.message);
-      setMode("ANONYMOUS");
-      router.push("/");
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "No se pudo crear la cuenta");
-    } finally {
-      setAuthLoading(false);
-    }
-  };
 
   const handleLogout = () => {
     void logout().catch(() => undefined);
@@ -268,95 +207,26 @@ export function ReportForm() {
         </div>
 
         {mode === "AUTHENTICATED" && !token ? (
-          <form
-            className="mb-5 grid gap-4 rounded-2xl border border-[var(--line)] p-4"
-            onSubmit={authTab === "LOGIN" ? handleLogin : handleRegister}
-          >
-            <h2 className="font-heading text-lg font-semibold text-emerald-900">Acceso Campus</h2>
-            <p className="text-sm text-[var(--text-muted)]">
-              Inicia sesion o crea tu cuenta para asociar el reporte a tu identidad.
+          <div className="mb-5 grid gap-3 rounded-2xl border border-[var(--line)] p-4">
+            <p className="text-sm text-slate-700">
+              Necesitas iniciar sesion para asociar el reporte a tu identidad. Tambien
+              puedes reportar de forma anonima sin cuenta.
             </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setAuthTab("LOGIN")}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  authTab === "LOGIN"
-                    ? "bg-emerald-700 text-white"
-                    : "border border-[var(--line)] text-emerald-800"
-                }`}
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/login?next=/"
+                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
               >
-                Login
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthTab("REGISTER")}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  authTab === "REGISTER"
-                    ? "bg-emerald-700 text-white"
-                    : "border border-[var(--line)] text-emerald-800"
-                }`}
+                Iniciar sesion
+              </Link>
+              <Link
+                href="/register?next=/"
+                className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
               >
                 Crear cuenta
-              </button>
+              </Link>
             </div>
-            <label className="grid gap-1 text-sm">
-              Codigo campus
-              <input
-                className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
-                value={campusId}
-                onChange={(e) => setCampusId(e.target.value)}
-                placeholder="u20260001"
-                required
-              />
-            </label>
-            {authTab === "REGISTER" ? (
-              <>
-                <label className="grid gap-1 text-sm">
-                  Nombre completo
-                  <input
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </label>
-                <label className="grid gap-1 text-sm">
-                  Correo
-                  <input
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    type="email"
-                    required
-                  />
-                </label>
-              </>
-            ) : null}
-            <label className="grid gap-1 text-sm">
-              Contrasena
-              <PasswordInput
-                className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm outline-none focus:border-emerald-600"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </label>
-            {authError ? <p className="text-sm text-red-600">{authError}</p> : null}
-            <button
-              disabled={authLoading}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {authLoading
-                ? authTab === "LOGIN"
-                  ? "Validando..."
-                  : "Creando cuenta..."
-                : authTab === "LOGIN"
-                  ? "Ingresar"
-                  : "Crear cuenta"}
-            </button>
-          </form>
+          </div>
         ) : null}
 
         {mode === "AUTHENTICATED" && token ? (

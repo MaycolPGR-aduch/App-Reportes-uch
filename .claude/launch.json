@@ -4,7 +4,7 @@
     {
       "name": "campus-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
       "port": 3000
     }
   ]
