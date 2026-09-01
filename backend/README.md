@@ -44,10 +44,11 @@ Desde `backend/`:
    En una base nueva basta `alembic -c alembic.ini upgrade head`.
    Si la base ya está en `20260721_01`, basta `alembic -c alembic.ini upgrade head` para aplicar
    `20260730_01` y `20260804_01`, usando el propietario de las tablas para la migración.
-3. Despliega el servicio definido en `render.yaml`; con Render Disk, la API y los
-   workers se ejecutan en el mismo grupo para compartir las evidencias privadas.
-   Render debe comprobar `/health/ready` antes de enrutar tráfico. Si se requiere
-   escalamiento horizontal, migra `LocalStorageProvider` a almacenamiento S3 primero.
+3. Despliega el servicio definido en `render.yaml`, que vive en la raíz del
+   repositorio porque es donde Render busca los Blueprint. Con `STORAGE_BACKEND=s3`
+   las evidencias van a un almacén de objetos y el servicio no necesita disco,
+   lo que además habilita el escalamiento horizontal. Render debe comprobar
+   `/health/ready` antes de enrutar tráfico.
 
 Las sesiones son cookies HttpOnly, no tokens Bearer. El frontend debe configurar
 `NEXT_PUBLIC_API_BASE_URL` y enviar solicitudes con credenciales incluidas.

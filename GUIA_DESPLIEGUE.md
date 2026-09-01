@@ -83,7 +83,7 @@ arranque y las crea en el primer despliegue.
 
 ## Paso 3 — API en Render
 
-1. **New → Blueprint**, apuntando al repositorio. Render lee `backend/render.yaml`
+1. **New → Blueprint**, apuntando al repositorio. Render lee `render.yaml`
    y declara el servicio y las 50 variables solo.
 2. Render pedirá los valores marcados como secretos. Los mínimos para arrancar:
 

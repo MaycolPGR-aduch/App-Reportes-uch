@@ -64,6 +64,6 @@ La integración continua ejecuta estas verificaciones en cada push y pull reques
 
 ## Despliegue
 
-`backend/render.yaml` describe el despliegue en Render. Configura los secretos únicamente en
+`render.yaml` describe el despliegue en Render. Configura los secretos únicamente en
 Render; nunca subas archivos `.env`. Consulta `backend/README.md` para migraciones, variables
 de entorno y consideraciones del Render Disk.
