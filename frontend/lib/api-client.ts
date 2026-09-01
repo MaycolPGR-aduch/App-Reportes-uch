@@ -426,6 +426,14 @@ export async function verifyEmail(token: string): Promise<{ message: string }> {
   });
 }
 
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/password-reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function confirmPasswordReset(
   token: string,
   password: string,
