@@ -6,7 +6,12 @@
 services:
   - type: web
     name: campus-alertas-api
-    env: python
+    # `runtime` es el nombre actual del campo; `env` era el antiguo.
+    runtime: python
+    # Sin `plan` explicito Render asume una instancia de pago y exige tarjeta
+    # antes de dejar crear el Blueprint.
+    plan: free
+    region: ohio
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # Migra, levanta los tres trabajadores y luego la API. Ver start.sh.
