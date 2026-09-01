@@ -45,9 +45,21 @@ def consume_account_token(db: Session, *, raw_token: str, purpose: str) -> User:
     return user
 
 
+def email_delivery_configured() -> bool:
+    """Si hay proveedor de correo, sin levantar nada.
+
+    `send_account_link` corta con 503 cuando falta, que es lo correcto para una
+    operación cuyo único cometido es enviar. Pero el registro y la recuperación
+    tienen algo que decir aunque el correo no salga, y necesitan preguntarlo
+    antes de intentarlo.
+    """
+    settings = get_settings()
+    return bool(settings.brevo_api_key and settings.brevo_from_email)
+
+
 def send_account_link(*, recipient: str, purpose: str, raw_token: str) -> None:
     settings = get_settings()
-    if not settings.brevo_api_key or not settings.brevo_from_email:
+    if not email_delivery_configured():
         raise HTTPException(status_code=503, detail="Email delivery is not configured")
     path = "verify-email" if purpose == "VERIFY_EMAIL" else "reset-password"
     url = f"{settings.frontend_base_url.rstrip('/')}/{path}?token={quote(raw_token)}"

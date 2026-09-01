@@ -22,7 +22,12 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services.accounts import consume_account_token, issue_account_token, send_account_link
+from app.services.accounts import (
+    consume_account_token,
+    email_delivery_configured,
+    issue_account_token,
+    send_account_link,
+)
 from app.services.captcha import verify_turnstile
 from app.services.rate_limit import client_identifier, enforce_rate_limit
 from app.services.sessions import clear_session_cookies, create_session, set_session_cookies
@@ -116,8 +121,22 @@ def register(
     db.add(user)
     db.commit()
     db.refresh(user)
+    # El testigo se emite pase lo que pase: si el correo se configura mas tarde,
+    # el enlace de verificacion sigue siendo valido durante sus 24 horas.
     raw_token = issue_account_token(db, user=user, purpose="VERIFY_EMAIL")
     db.commit()
+
+    if not email_delivery_configured():
+        # La cuenta ya esta guardada. Fallar aqui dejaba la pantalla diciendo
+        # error sobre un registro que si ocurrio, y el reintento respondia
+        # "ya registrado" contradiciendo al mensaje anterior.
+        return MessageResponse(
+            message=(
+                "Account created. Email verification is unavailable right now, "
+                "so an administrator must activate it."
+            )
+        )
+
     send_account_link(recipient=user.email, purpose="VERIFY_EMAIL", raw_token=raw_token)
     return MessageResponse(
         message="Account created. Verify your institutional email to activate it."
@@ -145,10 +164,14 @@ def resend_verification(payload: PasswordResetRequest, db: Session = Depends(get
 @router.post("/password-reset", response_model=MessageResponse)
 def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)) -> MessageResponse:
     user = db.query(User).filter(User.email == payload.email.strip().lower()).first()
-    if user:
+    if user and email_delivery_configured():
         raw_token = issue_account_token(db, user=user, purpose="RESET_PASSWORD")
         db.commit()
         send_account_link(recipient=user.email, purpose="RESET_PASSWORD", raw_token=raw_token)
+    # La respuesta es siempre la misma, y por eso `email_delivery_configured()`
+    # se consulta antes de enviar en vez de capturar el 503 despues: sin correo,
+    # una direccion registrada respondia 503 y una inventada 200, con lo que
+    # bastaba comparar para averiguar que correos tienen cuenta.
     return MessageResponse(message="If the email exists, a reset link has been sent.")
 
 
