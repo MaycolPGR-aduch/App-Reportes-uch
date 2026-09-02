@@ -23,7 +23,14 @@ def create_session(db: Session, user: User) -> tuple[str, AuthSession]:
     return token, session
 
 
-def set_session_cookies(response: Response, token: str) -> None:
+def set_session_cookies(response: Response, token: str) -> str:
+    """Fija las cookies y devuelve el testigo CSRF recien generado.
+
+    Se devuelve porque el frontend no puede leerlo: vive en un dominio distinto
+    al de la API, y `document.cookie` solo ve las cookies de su propio dominio.
+    Sin esto, la comprobacion de doble envio rechaza con 403 toda peticion que
+    modifique datos.
+    """
     settings = get_settings()
     max_age = settings.jwt_exp_minutes * 60
     response.set_cookie(
@@ -35,15 +42,17 @@ def set_session_cookies(response: Response, token: str) -> None:
         samesite=settings.cookie_samesite,
         path="/",
     )
+    csrf_token = generate_opaque_token()
     response.set_cookie(
         key=settings.csrf_cookie_name,
-        value=generate_opaque_token(),
+        value=csrf_token,
         max_age=max_age,
         httponly=False,
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
         path="/",
     )
+    return csrf_token
 
 
 def clear_session_cookies(response: Response) -> None:

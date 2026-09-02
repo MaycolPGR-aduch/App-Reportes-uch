@@ -174,6 +174,7 @@ export type SessionResponse = {
   message: string;
   role: UserRole;
   campus_id: string;
+  csrf_token: string;
 };
 
 export type CurrentUser = {
@@ -183,6 +184,7 @@ export type CurrentUser = {
   email: string;
   role: UserRole;
   status: UserStatus;
+  csrf_token?: string | null;
 };
 
 export type PublicRegisterPayload = {
@@ -379,17 +381,42 @@ async function parseError(response: Response): Promise<never> {
   throw new ApiHttpError(response.status, message);
 }
 
+/**
+ * Testigo CSRF de la sesion actual.
+ *
+ * Se guarda en memoria porque `document.cookie` no puede leer la cookie que
+ * pone la API: en produccion el frontend vive en un dominio y la API en otro,
+ * y una pagina solo ve las cookies de su propio dominio. Sin esto, toda
+ * peticion que modifique datos se rechaza con 403.
+ *
+ * En memoria y no en `localStorage`: se pierde al recargar --y se recupera
+ * pidiendo `/auth/me`--, pero no queda escrito en el disco del visitante.
+ */
+let csrfEnMemoria: string | null = null;
+
+export function recordarCsrf(token: string | null | undefined): void {
+  csrfEnMemoria = token ?? null;
+}
+
+function tomarCsrf(): string | null {
+  if (csrfEnMemoria) return csrfEnMemoria;
+  // Cuando comparten dominio --desarrollo local-- la cookie si es legible, y
+  // sirve de respaldo si aun no se ha pedido /auth/me.
+  const desdeCookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith("campus_csrf="))
+    ?.split("=", 2)[1];
+  return desdeCookie ? decodeURIComponent(desdeCookie) : null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   // All authenticated traffic uses the HttpOnly session cookie. Kept as defense
   // in depth so no caller can reintroduce bearer credentials.
   headers.delete("Authorization");
   if (!["GET", "HEAD", "OPTIONS"].includes((init?.method ?? "GET").toUpperCase())) {
-    const csrf = document.cookie
-      .split("; ")
-      .find((item) => item.startsWith("campus_csrf="))
-      ?.split("=", 2)[1];
-    if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
+    const csrf = tomarCsrf();
+    if (csrf) headers.set("X-CSRF-Token", csrf);
   }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -403,11 +430,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function login(campusId: string, password: string): Promise<SessionResponse> {
-  return request<SessionResponse>("/auth/login", {
+  const session = await request<SessionResponse>("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ campus_id: campusId, password }),
   });
+  recordarCsrf(session.csrf_token);
+  return session;
 }
 
 export async function registerUser(payload: PublicRegisterPayload): Promise<{ message: string }> {
@@ -446,11 +475,19 @@ export async function confirmPasswordReset(
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
-  return request<CurrentUser>("/auth/me");
+  const user = await request<CurrentUser>("/auth/me");
+  // Recupera el testigo tras recargar la pagina, que es cuando se pierde el
+  // que estaba en memoria.
+  recordarCsrf(user.csrf_token);
+  return user;
 }
 
 export async function logout(): Promise<{ message: string }> {
-  return request<{ message: string }>("/auth/logout", { method: "POST" });
+  try {
+    return await request<{ message: string }>("/auth/logout", { method: "POST" });
+  } finally {
+    recordarCsrf(null);
+  }
 }
 
 export async function createReport(

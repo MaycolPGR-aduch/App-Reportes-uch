@@ -82,10 +82,11 @@ def bootstrap_admin(
 
     token, _ = create_session(db, user)
     db.commit()
-    set_session_cookies(response, token)
+    csrf_token = set_session_cookies(response, token)
     return SessionResponse(
         role=user.role,
         campus_id=user.campus_id,
+        csrf_token=csrf_token,
     )
 
 
@@ -269,15 +270,20 @@ def login(
         user.password_hash = hash_password(payload.password)
     token, _ = create_session(db, user)
     db.commit()
-    set_session_cookies(response, token)
+    csrf_token = set_session_cookies(response, token)
     return SessionResponse(
         role=user.role,
         campus_id=user.campus_id,
+        csrf_token=csrf_token,
     )
 
 
 @router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_current_user)) -> UserResponse:
+def me(request: Request, current_user: User = Depends(get_current_user)) -> UserResponse:
+    # Se devuelve el testigo que ya viaja en la cookie, no uno nuevo: el
+    # middleware compara cabecera contra cookie, y rotarlo aqui invalidaria
+    # las peticiones en curso de otra pestana.
+    settings = get_settings()
     return UserResponse(
         id=current_user.id,
         campus_id=current_user.campus_id,
@@ -285,6 +291,7 @@ def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         email=current_user.email,
         role=current_user.role,
         status=current_user.status,
+        csrf_token=request.cookies.get(settings.csrf_cookie_name),
     )
 
 

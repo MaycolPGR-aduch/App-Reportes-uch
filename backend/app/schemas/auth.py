@@ -31,6 +31,9 @@ class SessionResponse(BaseModel):
     message: str = "Authenticated"
     role: UserRole
     campus_id: str
+    # El cliente no puede leer la cookie CSRF entre dominios, asi que viaja
+    # tambien en el cuerpo para que pueda reenviarla en la cabecera.
+    csrf_token: str
 
 
 class MessageResponse(BaseModel):
@@ -56,3 +59,6 @@ class UserResponse(BaseModel):
     email: str
     role: UserRole
     status: UserStatus
+    # Permite recuperar el testigo tras recargar la pagina, cuando el que
+    # guardaba el cliente en memoria se ha perdido.
+    csrf_token: str | None = None

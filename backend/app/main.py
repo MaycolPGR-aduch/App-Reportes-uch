@@ -37,15 +37,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-if settings.cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        allow_headers=["Content-Type", "X-CSRF-Token", "X-Turnstile-Token", "X-Trace-Id"],
-    )
-
 if settings.trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 
@@ -72,6 +63,22 @@ async def security_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self)"
     return response
+
+
+# CORS va al final a proposito. `add_middleware` coloca cada uno por delante del
+# anterior, de modo que el ultimo registrado envuelve al resto. Estando por
+# fuera, sus cabeceras se anaden tambien a las respuestas que `security_middleware`
+# devuelve por su cuenta --como el 403 de CSRF--, que antes salian sin ellas: el
+# navegador no veia cabecera de origen y lo denunciaba como fallo de CORS,
+# ocultando el error real y mandando a depurar la configuracion equivocada.
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "X-CSRF-Token", "X-Turnstile-Token", "X-Trace-Id"],
+    )
 
 
 @app.get("/health")
