@@ -530,13 +530,13 @@ def get_system_status(
         notes.append("El proveedor IA reporta cuota agotada o límite de uso alcanzado.")
     if ai_state == "FALLBACK_ACTIVE":
         notes.append("El router IA usó un modelo de respaldo en al menos una ejecución reciente.")
-    if not settings.auto_assign_enabled:
-        notes.append("Auto-asignación IA desactivada: asignación manual activa.")
-    if not settings.ai_moderation_enabled:
-        notes.append(
-            "Moderación IA desactivada: toda incidencia con consentimiento espera "
-            "decisión manual en la cola de moderación."
-        )
+    # Los interruptores AI_MODERATION_ENABLED y AUTO_ASSIGN_ENABLED se retiraron
+    # al dejar de decidir la IA: ya nada se publica ni se asigna solo, asi que
+    # anunciarlos como "desactivados" sugeriria que pueden activarse.
+    notes.append(
+        f"Régimen de moderación: {settings.governance_mode}. La IA propone; "
+        "clasificar, asignar y publicar son decisiones humanas."
+    )
 
     vencidas = len(asignaciones_vencidas(db, ahora=now))
     if vencidas:
@@ -1661,7 +1661,7 @@ def list_moderation_queue(
 
     return ModerationQueueResponse(
         total=int(total),
-        ai_moderation_enabled=settings.ai_moderation_enabled,
+        governance_mode=settings.governance_mode,
         ai_provider_failing=provider_failing,
         items=items,
     )

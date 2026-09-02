@@ -52,8 +52,6 @@ class Settings:
     ai_prompt_version: str
     ai_request_timeout_seconds: float
     ai_max_output_tokens: int
-    auto_assign_enabled: bool
-    ai_moderation_enabled: bool
     governance_mode: str
     alerts_enabled: bool
     alert_silence_hours: int
@@ -147,8 +145,6 @@ def get_settings() -> Settings:
         ai_prompt_version=os.getenv("AI_PROMPT_VERSION", "incident-classification-v2"),
         ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "30")),
         ai_max_output_tokens=int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")),
-        auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
-        ai_moderation_enabled=_as_bool(os.getenv("AI_MODERATION_ENABLED"), default=True),
         # MANUAL | AI_ASSISTED | RANDOM. Decide con que regimen nace cada
         # incidencia; el valor se estampa en ella y no se vuelve a mirar.
         governance_mode=os.getenv("GOVERNANCE_MODE", "AI_ASSISTED").strip().upper(),

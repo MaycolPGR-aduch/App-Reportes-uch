@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import socket
 import time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy.orm import joinedload
@@ -12,34 +11,12 @@ from app.core.config import get_settings
 from app.db import base as _models_registry  # noqa: F401
 from app.db.session import SessionLocal
 from app.models.ai_metric import AIMetric
-from app.models.assignment import IncidentAssignment
 from app.models.enums import IncidentStatus, JobType, PriorityLevel
 from app.models.incident import Incident
-from app.models.moderation_decision import ModerationDecision
-from app.models.responsible import Responsible
 from app.services.ai import AIClassificationError, classify_incident
-from app.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job, recover_expired_leases
+from app.services.jobs import claim_next_job, complete_job, fail_job, recover_expired_leases
 
 logger = logging.getLogger("campus.workers.ai")
-
-PRIORITY_SLA_HOURS = {
-    PriorityLevel.CRITICAL: 2,
-    PriorityLevel.HIGH: 6,
-    PriorityLevel.MEDIUM: 24,
-    PriorityLevel.LOW: 72,
-}
-
-
-
-def _has_manual_decision(db, incident_id) -> bool:
-    """Una decisión humana prevalece sobre cualquier reevaluación posterior."""
-    return (
-        db.query(ModerationDecision.id)
-        .filter(ModerationDecision.incident_id == incident_id)
-        .first()
-        is not None
-    )
-
 
 def _safe_load_evidence_bytes(
     *,
@@ -62,70 +39,6 @@ def _safe_load_evidence_bytes(
         return candidate.read_bytes()
     except Exception:
         return None
-
-
-def _resolve_responsible_for_assignment(
-    *,
-    db,
-    incident: Incident,
-    assigned_to_hint: str | None,
-) -> Responsible | None:
-    category_responsibles = (
-        db.query(Responsible)
-        .filter(
-            Responsible.category == incident.category,
-            Responsible.is_active.is_(True),
-        )
-        .all()
-    )
-    if not category_responsibles:
-        return None
-
-    if assigned_to_hint:
-        hint = assigned_to_hint.strip().lower()
-        for responsible in category_responsibles:
-            if hint in responsible.area_name.lower():
-                return responsible
-
-    # Fallback: choose one deterministically.
-    sorted_rows = sorted(
-        category_responsibles,
-        key=lambda row: (row.min_priority.value, row.created_at, row.full_name.lower()),
-    )
-    return sorted_rows[0]
-
-
-def _create_or_update_assignment(
-    *,
-    db,
-    incident: Incident,
-    responsible: Responsible,
-    note: str,
-) -> None:
-    existing = (
-        db.query(IncidentAssignment)
-        .filter(
-            IncidentAssignment.incident_id == incident.id,
-            IncidentAssignment.responsible_id == responsible.id,
-        )
-        .order_by(IncidentAssignment.created_at.desc())
-        .first()
-    )
-    if existing:
-        existing.notes = note[:300]
-        return
-
-    due_at = datetime.now(timezone.utc) + timedelta(
-        hours=PRIORITY_SLA_HOURS.get(incident.priority, 24)
-    )
-    assignment = IncidentAssignment(
-        incident_id=incident.id,
-        responsible_id=responsible.id,
-        assigned_at=datetime.now(timezone.utc),
-        due_at=due_at,
-        notes=note[:300],
-    )
-    db.add(assignment)
 
 
 def _run_iteration(*, worker_id: str, poll: float) -> None:
@@ -208,67 +121,36 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             )
             db.add(ai_metric)
 
-            # Moderation / false-positive controls extracted from the pilot behavior.
-            if not result.is_appropriate:
-                incident.status = IncidentStatus.REJECTED
-            elif not result.is_incident and incident.status == IncidentStatus.REPORTED:
+            # La IA propone; no decide.
+            #
+            # Hasta aqui este bloque reescribia categoria, prioridad, estado y
+            # visibilidad, y creaba asignaciones. Eso hacia imposible el estudio
+            # que compara moderar con IA frente a moderar sin ella: el brazo
+            # "asistido" no era asistido sino automatico, y el humano no tenia
+            # ningun punto donde aceptar o corregir.
+            #
+            # Ahora la recomendacion vive solo en el AIMetric que se acaba de
+            # guardar, y la incidencia queda esperando a una persona. Publicar,
+            # clasificar y asignar son decisiones humanas, registradas en
+            # `moderation_decisions` y `triage_decisions`.
+            #
+            # La incidencia pasa a IN_REVIEW: hay algo que mirar. No se rechaza
+            # sola aunque la IA la marque como inapropiada, porque eso volveria
+            # a introducir una automatizacion que el brazo manual no tiene.
+            # Es seguro: nada se publica sin aprobacion humana en ningun modo.
+            if incident.status == IncidentStatus.REPORTED:
                 incident.status = IncidentStatus.IN_REVIEW
 
-            # Community visibility is opt-in and only becomes available after this
-            # durable moderation pass. A failed job leaves the default (private).
-            #
-            # With AI moderation disabled the classification still runs -- category
-            # and priority are still useful -- but the verdict no longer publishes
-            # anything: every consented incident waits for a human in the admin
-            # moderation queue. A manual decision already recorded is never
-            # overwritten by a later re-run of this job.
-            if _has_manual_decision(db, incident.id):
-                logger.info(
-                    "ai_moderation_skipped_manual_decision incident_id=%s", incident.id
-                )
-            elif settings.ai_moderation_enabled:
-                incident.is_community_visible = bool(
-                    incident.community_consent and result.is_appropriate and result.is_incident
-                )
-            else:
-                incident.is_community_visible = False
-
-            if result.confidence >= 0.750 and result.is_incident:
-                incident.category = result.predicted_category
-            if incident.priority != PriorityLevel.CRITICAL and result.is_incident:
-                incident.priority = result.priority_label
-
-            assigned_responsible: Responsible | None = None
-            if settings.auto_assign_enabled and result.is_appropriate and result.is_incident:
-                responsible = _resolve_responsible_for_assignment(
-                    db=db,
-                    incident=incident,
-                    assigned_to_hint=result.assigned_to,
-                )
-                if responsible:
-                    assigned_responsible = responsible
-                    assignment_note = (
-                        f"Asignacion sugerida por IA ({result.model_name}). "
-                        f"Titulo sugerido: {result.suggested_title or 'N/A'}"
-                    )
-                    _create_or_update_assignment(
-                        db=db,
-                        incident=incident,
-                        responsible=responsible,
-                        note=assignment_note,
-                    )
-
-            if assigned_responsible is not None:
-                enqueue_job(
-                    db,
-                    incident_id=incident.id,
-                    job_type=JobType.SEND_NOTIFICATION,
-                    payload={
-                        "source": "ai_assignment",
-                        "classified_at": datetime.now(timezone.utc).isoformat(),
-                        "recipient_overrides": [assigned_responsible.email],
-                    },
-                )
+            logger.info(
+                "ai_suggestion_recorded incident_id=%s categoria=%s prioridad=%s "
+                "confianza=%.3f apropiada=%s es_incidencia=%s",
+                incident.id,
+                result.predicted_category.value,
+                result.priority_label.value,
+                float(result.confidence),
+                result.is_appropriate,
+                result.is_incident,
+            )
             complete_job(db, job)
             db.commit()
             logger.info(
@@ -279,8 +161,14 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 (result.raw_response or {}).get("fallback_index", 0),
             )
         except AIClassificationError as exc:
-            # Do not convert an unavailable/invalid AI answer into an approval.
-            # When retries are exhausted the incident stays private for a human.
+            # Una respuesta inservible de la IA no puede convertirse en una
+            # aprobacion. Ya no hace falta forzar la privacidad: este worker no
+            # publica nada, asi que la incidencia sigue privada por si sola.
+            #
+            # Se retiro `is_community_visible = False` de aqui porque su unico
+            # efecto posible era deshacer una decision humana: si alguien habia
+            # publicado la incidencia mientras el trabajo reintentaba, agotar
+            # los reintentos la despublicaba en silencio.
             fail_job(
                 db,
                 job,
@@ -289,7 +177,6 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             )
             if job.status.value == "FAILED":
                 incident.status = IncidentStatus.IN_REVIEW
-                incident.is_community_visible = False
             db.commit()
             logger.warning(
                 "ai_job_provider_failed incident_id=%s attempts=%s error=%s",
