@@ -114,8 +114,17 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
 
   const ANCHO = 460;
   const ALTO = 300;
+  // El encuadre lo manda lo que se esta capturando, no las zonas ya guardadas.
+  //
+  // Antes entraban todas en el ajuste, y bastaba una zona a un kilometro para
+  // que un recorrido de 74 m quedase reducido a 13 px; a tres kilometros, a
+  // cinco. En pantalla se veian puntos sueltos sin poligono, y el fallo no se
+  // noto mientras la base estuvo vacia: aparecio justo al arreglar el guardado.
+  //
+  // Las zonas existentes se siguen dibujando en esta misma proyeccion, asi que
+  // las vecinas aparecen como contexto y lo que quede fuera lo recorta el SVG.
   const proyectarPunto = proyectar(
-    [vertices, ...zonasParaComparar.map((z) => z.vertices)],
+    vertices.length > 0 ? [vertices] : zonasParaComparar.map((z) => z.vertices),
     ANCHO,
     ALTO,
   );
