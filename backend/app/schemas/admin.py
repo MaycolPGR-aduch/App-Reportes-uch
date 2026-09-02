@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.models.enums import (
     AssignmentStatus,
+    GovernanceMode,
     IncidentCategory,
     IncidentStatus,
     JobStatus,
@@ -257,6 +258,35 @@ class ModerationQueueResponse(BaseModel):
     ai_moderation_enabled: bool
     ai_provider_failing: bool = False
     items: list[ModerationQueueItem]
+
+
+class TriageRequest(BaseModel):
+    """Confirmacion o correccion humana de la clasificacion."""
+
+    category: IncidentCategory
+    priority: PriorityLevel
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class TriageSuggestionOut(BaseModel):
+    """Lo que propuso la IA, para mostrarlo junto a los campos editables."""
+
+    category: IncidentCategory
+    priority: PriorityLevel
+    confidence: float
+    model_name: str
+    created_at: datetime
+
+
+class TriageResponse(BaseModel):
+    incident_id: UUID
+    category: IncidentCategory
+    priority: PriorityLevel
+    governance_mode: GovernanceMode
+    #: Si la decision coincidio con lo que proponia la IA. `None` en modo
+    #: manual, donde no hubo propuesta con la que comparar.
+    agreed_with_ai: bool | None
+    message: str
 
 
 class CommunityVisibilityRequest(BaseModel):

@@ -30,29 +30,30 @@ from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job
 from app.models.moderation_decision import ModerationDecision
+from app.models.triage_decision import TriageDecision
 from app.models.location import IncidentLocation
 from app.models.responsible import Responsible
 from app.models.user import User
 from app.schemas.admin import (
-    CommunityVisibilityRequest,
-    CommunityVisibilityResponse,
-    ModerationDecisionOut,
-    ModerationQueueItem,
-    ModerationQueueResponse,
+    AIProviderStatusOut,
     AdminCreateUserRequest,
     AdminUpdateUserRequest,
+    AdminUserListResponse,
+    AdminUserOut,
+    AssignmentActionResponse,
     CampusZoneCreateRequest,
     CampusZoneListResponse,
     CampusZoneOut,
     CampusZoneUpdateRequest,
+    CommunityVisibilityRequest,
+    CommunityVisibilityResponse,
     IncidentLocationResolveResponse,
-    AdminUserListResponse,
-    AdminUserOut,
-    AssignmentActionResponse,
-    AIProviderStatusOut,
     IncidentStatusUpdateResponse,
     JobQueueSummaryItem,
     ManualAssignIncidentRequest,
+    ModerationDecisionOut,
+    ModerationQueueItem,
+    ModerationQueueResponse,
     StaffAssignmentItem,
     StaffAssignmentListResponse,
     StaffCreateRequest,
@@ -60,6 +61,8 @@ from app.schemas.admin import (
     StaffOut,
     StaffUpdateRequest,
     SystemStatusResponse,
+    TriageRequest,
+    TriageResponse,
     UpdateAssignmentStatusRequest,
     UpdateIncidentStatusRequest,
     WorkerStatusOut,
@@ -1402,6 +1405,94 @@ def update_assignment_status(
         assignment_status=assignment.status,
         incident_status=incident.status,
         message="Estado de asignación actualizado.",
+    )
+
+
+@router.patch("/incidents/{incident_id}/triage", response_model=TriageResponse)
+def triage_incident(
+    incident_id: UUID,
+    payload: TriageRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+) -> TriageResponse:
+    """Confirma o corrige la categoria y la prioridad de una incidencia.
+
+    Es el punto donde una persona decide. Antes no existia: la unica forma de
+    que `category` o `priority` cambiaran era que la IA las reescribiera sola,
+    de modo que su criterio era inapelable.
+
+    La asignacion de personal no se toca aqui --tiene su propio endpoint-- para
+    no duplicar la comprobacion de staff activo ni el calculo del plazo.
+    """
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+
+    # La propuesta vigente de la IA, si la hubo. En modo manual no hay ninguna,
+    # y esa ausencia es parte de lo que mide el estudio.
+    metric = (
+        db.query(AIMetric)
+        .filter(AIMetric.incident_id == incident.id)
+        .order_by(AIMetric.created_at.desc())
+        .first()
+    )
+
+    coincide: bool | None = None
+    if metric is not None:
+        coincide = (
+            payload.category == metric.predicted_category
+            and payload.priority == metric.priority_label
+        )
+
+    # La asignacion vigente se copia solo como contexto de la decision.
+    asignacion = (
+        db.query(IncidentAssignment)
+        .filter(
+            IncidentAssignment.incident_id == incident.id,
+            IncidentAssignment.status != AssignmentStatus.COMPLETED,
+        )
+        .order_by(IncidentAssignment.assigned_at.desc())
+        .first()
+    )
+
+    incident.category = payload.category
+    incident.priority = payload.priority
+
+    decision = TriageDecision(
+        incident_id=incident.id,
+        actor_user_id=current_admin.id,
+        # Copiado, no referenciado: la traza debe sostenerse aunque la cuenta
+        # se borre, y los datos del estudio no pueden perder al decisor.
+        actor_label=f"{current_admin.full_name} ({current_admin.campus_id})"[:160],
+        governance_mode=incident.governance_mode,
+        ai_suggested_category=metric.predicted_category if metric else None,
+        ai_suggested_priority=metric.priority_label if metric else None,
+        ai_confidence=metric.confidence if metric else None,
+        final_category=payload.category,
+        final_priority=payload.priority,
+        assigned_responsible_id=asignacion.responsible_id if asignacion else None,
+        reason=(payload.reason or "").strip()[:300] or None,
+    )
+    db.add(decision)
+    # Una sola transaccion: una decision aplicada sin registrar --o al reves--
+    # dejaria los datos del estudio mintiendo sobre lo que ocurrio.
+    db.commit()
+    db.refresh(incident)
+
+    if coincide is None:
+        mensaje = "Clasificacion registrada."
+    elif coincide:
+        mensaje = "Clasificacion confirmada; coincide con la propuesta de la IA."
+    else:
+        mensaje = "Clasificacion corregida; se registro la diferencia con la IA."
+
+    return TriageResponse(
+        incident_id=incident.id,
+        category=incident.category,
+        priority=incident.priority,
+        governance_mode=incident.governance_mode,
+        agreed_with_ai=coincide,
+        message=mensaje,
     )
 
 

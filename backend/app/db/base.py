@@ -7,6 +7,7 @@ from app.models.campus_zone import CampusZone
 from app.models.community_reaction import CommunityReaction
 from app.models.moderation_decision import ModerationDecision
 from app.models.system_alert import SystemAlert
+from app.models.triage_decision import TriageDecision
 from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job
@@ -32,6 +33,9 @@ __all__ = [
     "Notification",
     "AIMetric",
     "Job",
+    "ModerationDecision",
+    "SystemAlert",
+    "TriageDecision",
 ]
 
 # Registra el escucha que avisa al reportante al resolverse su incidencia.
