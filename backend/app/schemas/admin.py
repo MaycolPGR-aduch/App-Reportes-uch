@@ -226,6 +226,16 @@ class IncidentLocationResolveResponse(BaseModel):
     message: str
 
 
+class TriageDecisionOut(BaseModel):
+    actor_label: str
+    final_category: IncidentCategory
+    final_priority: PriorityLevel
+    ai_suggested_category: IncidentCategory | None
+    ai_suggested_priority: PriorityLevel | None
+    reason: str | None
+    created_at: datetime
+
+
 class ModerationDecisionOut(BaseModel):
     actor_label: str
     published: bool
@@ -251,6 +261,20 @@ class ModerationQueueItem(BaseModel):
     ai_is_incident: bool | None
     ai_reason: str | None
     last_decision: ModerationDecisionOut | None
+
+    # --- clasificacion: las tres versiones del caso ----------------------
+    #: Lo que eligio quien reporta. NULL en incidencias anteriores al registro.
+    reported_category: IncidentCategory | None
+    #: Lo vigente ahora mismo (`category` esta arriba).
+    priority: PriorityLevel
+    #: Bajo que regimen se proceso.
+    governance_mode: GovernanceMode
+    #: La propuesta de la IA. Vacia en modo manual, donde no la hubo.
+    ai_suggested_category: IncidentCategory | None
+    ai_suggested_priority: PriorityLevel | None
+    ai_confidence: float | None
+    #: Si ya paso por triaje humano, lo que se decidio entonces.
+    last_triage: TriageDecisionOut | None
 
 
 class ModerationQueueResponse(BaseModel):

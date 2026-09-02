@@ -35,6 +35,7 @@ from app.models.location import IncidentLocation
 from app.models.responsible import Responsible
 from app.models.user import User
 from app.schemas.admin import (
+    TriageDecisionOut,
     AIProviderStatusOut,
     AdminCreateUserRequest,
     AdminUpdateUserRequest,
@@ -1606,6 +1607,12 @@ def list_moderation_queue(
             .first()
         )
         decision = _latest_decision(db, incident.id)
+        triaje = (
+            db.query(TriageDecision)
+            .filter(TriageDecision.incident_id == incident.id)
+            .order_by(TriageDecision.created_at.desc())
+            .first()
+        )
         evaluated, appropriate, is_incident, reason = _ai_verdict(metric)
         # Sin la fotografía no se puede decidir si el contenido es publicable.
         evidence = (
@@ -1643,6 +1650,25 @@ def list_moderation_queue(
                         created_at=decision.created_at,
                     )
                     if decision
+                    else None
+                ),
+                reported_category=incident.reported_category,
+                priority=incident.priority,
+                governance_mode=incident.governance_mode,
+                ai_suggested_category=metric.predicted_category if metric else None,
+                ai_suggested_priority=metric.priority_label if metric else None,
+                ai_confidence=float(metric.confidence) if metric else None,
+                last_triage=(
+                    TriageDecisionOut(
+                        actor_label=triaje.actor_label,
+                        final_category=triaje.final_category,
+                        final_priority=triaje.final_priority,
+                        ai_suggested_category=triaje.ai_suggested_category,
+                        ai_suggested_priority=triaje.ai_suggested_priority,
+                        reason=triaje.reason,
+                        created_at=triaje.created_at,
+                    )
+                    if triaje
                     else None
                 ),
             )

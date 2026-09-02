@@ -161,11 +161,43 @@ export type ModerationQueueItem = {
   ai_is_incident: boolean | null;
   ai_reason: string | null;
   last_decision: ModerationDecisionInfo | null;
+
+  /** Lo que eligio quien reporta. `null` en incidencias previas al registro. */
+  reported_category: IncidentCategory | null;
+  priority: PriorityLevel;
+  governance_mode: GovernanceMode;
+  /** La propuesta de la IA. Vacia en modo manual, donde no la hubo. */
+  ai_suggested_category: IncidentCategory | null;
+  ai_suggested_priority: PriorityLevel | null;
+  ai_confidence: number | null;
+  last_triage: TriageDecisionInfo | null;
+};
+
+export type GovernanceMode = "MANUAL" | "AI_ASSISTED" | "AI_AUTONOMOUS";
+
+export type TriageDecisionInfo = {
+  actor_label: string;
+  final_category: IncidentCategory;
+  final_priority: PriorityLevel;
+  ai_suggested_category: IncidentCategory | null;
+  ai_suggested_priority: PriorityLevel | null;
+  reason: string | null;
+  created_at: string;
+};
+
+export type TriageResult = {
+  incident_id: string;
+  category: IncidentCategory;
+  priority: PriorityLevel;
+  governance_mode: GovernanceMode;
+  /** `null` en modo manual: no hubo propuesta con la que comparar. */
+  agreed_with_ai: boolean | null;
+  message: string;
 };
 
 export type ModerationQueueResponse = {
   total: number;
-  ai_moderation_enabled: boolean;
+  governance_mode: GovernanceMode;
   ai_provider_failing: boolean;
   items: ModerationQueueItem[];
 };
@@ -937,6 +969,17 @@ export async function resolveIncidentLocationZone(
 ): Promise<IncidentLocationResolveResponse> {
   return request<IncidentLocationResolveResponse>(`/admin/incidents/${incidentId}/resolve-location`, {
     method: "POST",
+  });
+}
+
+export async function triageIncident(
+  incidentId: string,
+  payload: { category: IncidentCategory; priority: PriorityLevel; reason?: string },
+): Promise<TriageResult> {
+  return request<TriageResult>(`/admin/incidents/${incidentId}/triage`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

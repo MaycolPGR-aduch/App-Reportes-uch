@@ -8,6 +8,7 @@ import {
   setCommunityVisibility,
 } from "@/lib/api-client";
 import { useConfirm } from "@/components/confirm-dialog";
+import { TriagePanel } from "@/components/triage-panel";
 
 const ESTADO_ETIQUETA: Record<string, { texto: string; clase: string }> = {
   PENDIENTE_IA: {
@@ -49,7 +50,7 @@ export function ModerationQueue() {
   const { confirm, dialog } = useConfirm();
   const [items, setItems] = useState<ModerationQueueItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const [modo, setModo] = useState<string>("AI_ASSISTED");
   const [providerFailing, setProviderFailing] = useState(false);
   const [includePublished, setIncludePublished] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -81,7 +82,7 @@ export function ModerationQueue() {
       const data = await listModerationQueue({ include_published: includePublished });
       setItems(data.items);
       setTotal(data.total);
-      setAiEnabled(data.ai_moderation_enabled);
+      setModo(data.governance_mode);
       setProviderFailing(data.ai_provider_failing);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cargar la cola de moderación");
@@ -156,25 +157,32 @@ export function ModerationQueue() {
         </button>
       </div>
 
-      {/* La política configurada y el estado real del proveedor son cosas
-          distintas: decir "la IA decide" mientras está caída induce a error. */}
+      {/* El régimen configurado y el estado real del proveedor son cosas
+          distintas: anunciar que hay recomendaciones mientras la IA está caída
+          induce a error. */}
       <div
         className={`rounded-lg border px-3 py-2 text-xs ${
-          !aiEnabled || providerFailing
+          providerFailing
             ? "border-amber-300 bg-amber-50 text-amber-900"
             : "border-emerald-200 bg-emerald-50 text-emerald-800"
         }`}
       >
-        {!aiEnabled ? (
-          "Moderación automática desactivada por configuración: toda incidencia con consentimiento espera decisión humana."
+        {modo === "MANUAL" ? (
+          <>
+            <strong>Régimen manual.</strong> No se consulta a la IA: clasificas y publicas
+            sin recomendación previa.
+          </>
         ) : providerFailing ? (
           <>
-            <strong>La moderación automática está configurada, pero el proveedor de IA no responde.</strong>{" "}
-            Nada se publicará solo mientras siga caído: todo lo que llegue quedará aquí esperando
-            decisión humana. Revisa la pestaña Sistema para el detalle del fallo.
+            <strong>Régimen asistido, pero el proveedor de IA no responde.</strong>{" "}
+            Las incidencias llegarán aquí sin recomendación. Revisa la pestaña Sistema
+            para el detalle del fallo.
           </>
         ) : (
-          "Moderación automática activa: la IA decide y aquí quedan las que rechazó o no pudo evaluar."
+          <>
+            <strong>Régimen asistido.</strong> La IA propone; publicar y clasificar
+            siguen siendo decisiones tuyas, y quedan registradas a tu nombre.
+          </>
         )}
       </div>
 
@@ -263,6 +271,8 @@ export function ModerationQueue() {
                   {item.last_decision.reason ? ` · ${item.last_decision.reason}` : ""}
                 </p>
               ) : null}
+
+              <TriagePanel item={item} onDone={() => void load()} />
 
               <div className="flex flex-wrap gap-2 pt-1">
                 {item.is_community_visible ? (
