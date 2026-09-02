@@ -7,11 +7,19 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
 from app.core.config import get_settings
-from app.core.security import hash_password, password_needs_rehash, verify_password
+from app.core.security import (
+    hash_opaque_token,
+    hash_password,
+    password_needs_rehash,
+    verify_password,
+)
 from app.db.session import get_db
+from app.models.auth_session import AuthSession
 from app.models.enums import UserRole, UserStatus
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
+    ProfileResponse,
     LoginRequest,
     MessageResponse,
     PublicRegisterRequest,
@@ -292,6 +300,104 @@ def me(request: Request, current_user: User = Depends(get_current_user)) -> User
         role=current_user.role,
         status=current_user.status,
         csrf_token=request.cookies.get(settings.csrf_cookie_name),
+    )
+
+
+@router.get("/profile", response_model=ProfileResponse)
+def profile(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProfileResponse:
+    """Los datos de la propia cuenta, para cualquier rol."""
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    actual = hash_opaque_token(token) if token else None
+
+    otras = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.user_id == current_user.id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > datetime.now(timezone.utc),
+            AuthSession.token_hash != actual,
+        )
+        .count()
+    )
+
+    return ProfileResponse(
+        id=current_user.id,
+        campus_id=current_user.campus_id,
+        full_name=current_user.full_name,
+        email=current_user.email,
+        role=current_user.role,
+        status=current_user.status,
+        created_at=current_user.created_at,
+        other_sessions=otras,
+    )
+
+
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    """Cambia la contrasena de quien esta dentro, exigiendo la actual."""
+    enforce_rate_limit(
+        db,
+        scope="change_password",
+        identifier=client_identifier(request, current_user.campus_id),
+        limit=get_settings().rate_limit_login,
+    )
+
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=400, detail="The new password must be different")
+
+    current_user.password_hash = hash_password(payload.new_password)
+
+    # Se cierran las demas sesiones: si la contrasena se cambia por sospecha,
+    # dejar abiertas las de otros dispositivos no arreglaria nada. La actual se
+    # conserva para no expulsar a quien acaba de hacerlo.
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    actual = hash_opaque_token(token) if token else None
+    _revocar_otras_sesiones(db, user_id=current_user.id, conservar=actual)
+
+    db.commit()
+    return MessageResponse(message="Password updated. Other sessions were closed.")
+
+
+@router.post("/sessions/revoke-others", response_model=MessageResponse)
+def revoke_other_sessions(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    """Cierra la sesion en los demas dispositivos, conservando esta."""
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    actual = hash_opaque_token(token) if token else None
+    cerradas = _revocar_otras_sesiones(db, user_id=current_user.id, conservar=actual)
+    db.commit()
+    return MessageResponse(message=f"Closed {cerradas} other session(s).")
+
+
+def _revocar_otras_sesiones(db: Session, *, user_id, conservar: str | None) -> int:
+    """Marca como revocadas las sesiones vivas del usuario salvo `conservar`."""
+    consulta = db.query(AuthSession).filter(
+        AuthSession.user_id == user_id,
+        AuthSession.revoked_at.is_(None),
+        AuthSession.expires_at > datetime.now(timezone.utc),
+    )
+    if conservar is not None:
+        consulta = consulta.filter(AuthSession.token_hash != conservar)
+    return consulta.update(
+        {AuthSession.revoked_at: datetime.now(timezone.utc)}, synchronize_session=False
     )
 
 

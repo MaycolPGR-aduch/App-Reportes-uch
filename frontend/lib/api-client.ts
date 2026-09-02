@@ -177,6 +177,17 @@ export type SessionResponse = {
   csrf_token: string;
 };
 
+export type Profile = {
+  id: string;
+  campus_id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  created_at: string;
+  other_sessions: number;
+};
+
 export type CurrentUser = {
   id: string;
   campus_id: string;
@@ -480,6 +491,25 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   // que estaba en memoria.
   recordarCsrf(user.csrf_token);
   return user;
+}
+
+export async function getProfile(): Promise<Profile> {
+  return request<Profile>("/auth/profile");
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export async function revokeOtherSessions(): Promise<{ message: string }> {
+  return request<{ message: string }>("/auth/sessions/revoke-others", { method: "POST" });
 }
 
 export async function logout(): Promise<{ message: string }> {

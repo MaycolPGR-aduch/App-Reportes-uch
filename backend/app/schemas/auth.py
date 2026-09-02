@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -50,6 +51,26 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetConfirmRequest(VerifyEmailRequest):
     password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    # Se exige la actual aunque haya sesion: sin esto, quien se sentara un
+    # momento ante una pantalla desatendida podria apropiarse de la cuenta.
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ProfileResponse(BaseModel):
+    id: UUID
+    campus_id: str
+    full_name: str
+    email: str
+    role: UserRole
+    status: UserStatus
+    created_at: datetime
+    # Sesiones abiertas ademas de la actual: si son mas de las que reconoces,
+    # conviene cerrarlas.
+    other_sessions: int
 
 
 class UserResponse(BaseModel):

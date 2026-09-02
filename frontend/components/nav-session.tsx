@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/api-client";
 type Estado = "COMPROBANDO" | "CON_SESION" | "SIN_SESION";
 
 /**
- * Enlace de acceso en la barra superior.
+ * Enlace de la barra superior: entrar si no hay sesion, la propia cuenta si la hay.
  *
  * Hasta ahora la única forma de descubrir que el sistema tiene cuentas era
  * toparse con el selector dentro del formulario de reporte. Este enlace es la
@@ -33,11 +33,23 @@ export function NavSession() {
     // y vuelve tras cerrar sesión, sin recargar.
   }, [pathname]);
 
-  // En las propias pantallas de acceso el enlace sobra.
+  // En las propias pantallas de acceso el enlace de entrar sobra.
   const enPantallaDeAcceso =
     pathname === "/login" || pathname === "/register" || pathname === "/forgot-password";
 
-  if (estado !== "SIN_SESION" || enPantallaDeAcceso) return null;
+  if (estado === "COMPROBANDO") return null;
+
+  if (estado === "CON_SESION") {
+    // Ya dentro, lo util es llegar a la propia cuenta.
+    if (pathname === "/profile") return null;
+    return (
+      <Link className="rounded-full px-3 py-1.5 hover:bg-emerald-100" href="/profile">
+        Mi cuenta
+      </Link>
+    );
+  }
+
+  if (enPantallaDeAcceso) return null;
 
   return (
     <Link className="rounded-full px-3 py-1.5 hover:bg-emerald-100" href="/login">
