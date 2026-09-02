@@ -54,6 +54,7 @@ class Settings:
     ai_max_output_tokens: int
     auto_assign_enabled: bool
     ai_moderation_enabled: bool
+    governance_mode: str
     alerts_enabled: bool
     alert_silence_hours: int
     monitor_interval_minutes: int
@@ -148,6 +149,9 @@ def get_settings() -> Settings:
         ai_max_output_tokens=int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")),
         auto_assign_enabled=_as_bool(os.getenv("AUTO_ASSIGN_ENABLED"), default=False),
         ai_moderation_enabled=_as_bool(os.getenv("AI_MODERATION_ENABLED"), default=True),
+        # MANUAL | AI_ASSISTED | RANDOM. Decide con que regimen nace cada
+        # incidencia; el valor se estampa en ella y no se vuelve a mirar.
+        governance_mode=os.getenv("GOVERNANCE_MODE", "AI_ASSISTED").strip().upper(),
         alerts_enabled=_as_bool(os.getenv("ALERTS_ENABLED"), default=True),
         alert_silence_hours=int(os.getenv("ALERT_SILENCE_HOURS", "6")),
         monitor_interval_minutes=int(os.getenv("MONITOR_INTERVAL_MINUTES", "15")),

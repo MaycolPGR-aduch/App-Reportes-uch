@@ -62,3 +62,20 @@ class JobStatus(str, enum.Enum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+
+
+class GovernanceMode(str, enum.Enum):
+    """Regimen bajo el que se proceso una incidencia.
+
+    Se estampa en cada una al crearla y no se toca despues: el paper compara
+    los dos primeros brazos, y cambiar el modo de una incidencia ya procesada
+    falsearia el registro.
+    """
+
+    #: Sin IA. Todo lo decide una persona.
+    MANUAL = "MANUAL"
+    #: La IA propone; una persona acepta o corrige.
+    AI_ASSISTED = "AI_ASSISTED"
+    #: Regimen anterior al experimento, en que la IA clasificaba, asignaba y
+    #: publicaba sola. Existe para etiquetar lo ya ocurrido, no para operar.
+    AI_AUTONOMOUS = "AI_AUTONOMOUS"

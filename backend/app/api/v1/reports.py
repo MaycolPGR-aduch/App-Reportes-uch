@@ -52,6 +52,7 @@ from app.services.sanitizer import sanitize_description, sanitize_title
 from app.services.captcha import verify_turnstile
 from app.services.images import InvalidImageError, normalize_image
 from app.services.rate_limit import client_identifier, enforce_rate_limit
+from app.services.governance import resolver_modo, usa_ia
 from app.services.storage import EvidenceNotStored, get_storage_provider
 
 router = APIRouter(tags=["reports"])
@@ -234,16 +235,23 @@ async def create_report(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    modo = resolver_modo(settings.governance_mode)
     incident = Incident(
         reporter_id=current_user.id if current_user else None,
         description=sanitized_description,
         category=category,
+        # La misma categoria en dos columnas a proposito: `category` puede
+        # cambiarla despues la IA o el administrador, `reported_category` no.
+        # Sin ese valor original no se puede medir cuantas veces se corrige a
+        # quien reporta, que es la comparacion central del estudio.
+        reported_category=category,
         status=IncidentStatus.REPORTED,
         priority=PriorityLevel.MEDIUM,
         trace_id=(trace_id or "")[:64] or None,
         created_by=current_user.campus_id if current_user else "anonymous",
         community_consent=community_consent,
         is_community_visible=False,
+        governance_mode=modo,
     )
     db.add(incident)
     db.flush()
@@ -282,12 +290,16 @@ async def create_report(
     )
     db.add_all([location, evidence])
 
-    enqueue_job(
-        db,
-        incident_id=incident.id,
-        job_type=JobType.CLASSIFY_INCIDENT,
-        payload={"source": "report_created"},
-    )
+    # En modo manual no se encola: no se llama al proveedor, no se gasta cuota
+    # y --lo que importa-- no queda ningun proceso que pueda tocar la
+    # incidencia. Es lo que hace limpio ese brazo del experimento.
+    if usa_ia(modo):
+        enqueue_job(
+            db,
+            incident_id=incident.id,
+            job_type=JobType.CLASSIFY_INCIDENT,
+            payload={"source": "report_created", "governance_mode": modo.value},
+        )
 
     try:
         db.commit()

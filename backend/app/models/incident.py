@@ -9,7 +9,12 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
-from app.models.enums import IncidentCategory, IncidentStatus, PriorityLevel
+from app.models.enums import (
+    GovernanceMode,
+    IncidentCategory,
+    IncidentStatus,
+    PriorityLevel,
+)
 
 if TYPE_CHECKING:
     from app.models.ai_metric import AIMetric
@@ -62,6 +67,21 @@ class Incident(Base, TimestampMixin):
     )
     is_community_visible: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    #: Regimen bajo el que se proceso. Se estampa al crearla y no se toca:
+    #: cambiarlo despues atribuiria la incidencia al brazo equivocado.
+    governance_mode: Mapped[GovernanceMode] = mapped_column(
+        SAEnum(GovernanceMode, name="governance_mode"),
+        nullable=False,
+        default=GovernanceMode.AI_ASSISTED,
+        server_default="AI_ASSISTED",
+    )
+    #: La categoria que eligio quien reporta, antes de que nadie la revise.
+    #: `category` puede cambiar --por la IA o por el administrador--; esta no.
+    #: Es NULL en las incidencias anteriores a esta columna, donde el valor
+    #: original ya se habia perdido.
+    reported_category: Mapped[IncidentCategory | None] = mapped_column(
+        SAEnum(IncidentCategory, name="incident_category"), nullable=True
     )
 
     reporter: Mapped["User | None"] = relationship(back_populates="incidents")
