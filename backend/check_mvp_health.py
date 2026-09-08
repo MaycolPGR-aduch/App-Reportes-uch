@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -164,9 +165,18 @@ def main() -> int:
 
     # 4) Login API (sin navegador, sin bloqueo CORS del browser)
     try:
+        # Las credenciales llegan del entorno: tenerlas escritas aqui las
+        # publicaba en un repositorio abierto.
+        campus_id = os.getenv("HEALTH_CHECK_CAMPUS_ID", "uadmin01")
+        password = os.getenv("HEALTH_CHECK_PASSWORD")
+        if not password:
+            print_fail(
+                "Define HEALTH_CHECK_PASSWORD para comprobar el inicio de sesion"
+            )
+            raise SystemExit(1)
         login_resp = http_post_json(
             login_url,
-            {"campus_id": "uadmin01", "password": "Admin12345!"},
+            {"campus_id": campus_id, "password": password},
         )
         token = login_resp.get("access_token")
         if token:

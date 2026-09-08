@@ -129,12 +129,13 @@ Para probar disponibilidad real, entrada de imagen y JSON de cada modelo configu
 
 ## Usuarios de prueba (seed SQL)
 
-Si ejecutaste `sql/seed_test_users.sql`, puedes iniciar sesion con:
+`sql/seed_test_users.sql` crea las cuentas `uadmin01`, `ustudent01`, `usec01` y
+`uclean01`, pero **sin contrasenas**: hay que generar cada hash y sustituirlo en
+el archivo antes de ejecutarlo. Las instrucciones estan en sus comentarios.
 
-- Admin: `uadmin01` / `Admin12345!`
-- Estudiante: `ustudent01` / `Campus12345!`
-- Staff seguridad: `usec01` / `Seguridad123!`
-- Staff limpieza: `uclean01` / `Limpieza123!`
+Antes traia las contrasenas escritas aqui y en el propio SQL. Se retiraron: el
+repositorio es publico, y cualquiera podia entrar como administrador en una
+instalacion sembrada con ellas.
 
 Para crear usuarios via API (solo ADMIN):
 
