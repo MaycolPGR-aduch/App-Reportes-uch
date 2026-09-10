@@ -9,28 +9,17 @@ import {
 } from "@/lib/api-client";
 import { useConfirm } from "@/components/confirm-dialog";
 import { TriagePanel } from "@/components/triage-panel";
+import { categoryLabels, type Tone } from "@/lib/labels";
+import { Alert, Badge } from "@/components/ui";
 
-const ESTADO_ETIQUETA: Record<string, { texto: string; clase: string }> = {
-  PENDIENTE_IA: {
-    texto: "Sin evaluar por IA",
-    clase: "bg-amber-50 text-amber-800 border-amber-200",
-  },
-  RECHAZADA_IA: {
-    texto: "Rechazada por IA",
-    clase: "bg-red-50 text-red-800 border-red-200",
-  },
-  PUBLICADA_IA: {
-    texto: "Publicada por IA",
-    clase: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  },
-  PUBLICADA_MANUAL: {
-    texto: "Publicada por un administrador",
-    clase: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  },
-  OCULTA_MANUAL: {
-    texto: "Retirada por un administrador",
-    clase: "bg-slate-100 text-slate-700 border-slate-300",
-  },
+/* El estado de moderación pasa por el mismo sistema de tonos que el resto de
+   la aplicación, en vez de llevar su propia tabla de clases de color. */
+const ESTADO_ETIQUETA: Record<string, { texto: string; tono: Tone }> = {
+  PENDIENTE_IA: { texto: "Sin evaluar por IA", tono: "warning" },
+  RECHAZADA_IA: { texto: "Rechazada por IA", tono: "danger" },
+  PUBLICADA_IA: { texto: "Publicada por IA", tono: "success" },
+  PUBLICADA_MANUAL: { texto: "Publicada por un administrador", tono: "success" },
+  OCULTA_MANUAL: { texto: "Retirada por un administrador", tono: "neutral" },
 };
 
 function motivoOculta(item: ModerationQueueItem): string {
@@ -138,12 +127,12 @@ export function ModerationQueue() {
   };
 
   return (
-    <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4">
+    <div className="admin-panel admin-form-surface grid gap-3 rounded-2xl border border-line bg-card p-4">
       {dialog}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Moderación de la vista comunitaria ({total})</h3>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted">
             Incidencias cuyo autor autorizó compartirlas y esperan una decisión.
           </p>
         </div>
@@ -151,7 +140,7 @@ export function ModerationQueue() {
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+          className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
         >
           {loading ? "Cargando..." : "Actualizar"}
         </button>
@@ -160,13 +149,7 @@ export function ModerationQueue() {
       {/* El régimen configurado y el estado real del proveedor son cosas
           distintas: anunciar que hay recomendaciones mientras la IA está caída
           induce a error. */}
-      <div
-        className={`rounded-lg border px-3 py-2 text-xs ${
-          providerFailing
-            ? "border-amber-300 bg-amber-50 text-amber-900"
-            : "border-emerald-200 bg-emerald-50 text-emerald-800"
-        }`}
-      >
+      <Alert tone={providerFailing ? "warning" : "success"}>
         {modo === "MANUAL" ? (
           <>
             <strong>Régimen manual.</strong> No se consulta a la IA: clasificas y publicas
@@ -184,7 +167,7 @@ export function ModerationQueue() {
             siguen siendo decisiones tuyas, y quedan registradas a tu nombre.
           </>
         )}
-      </div>
+      </Alert>
 
       <label className="flex items-center gap-2 text-xs">
         <input
@@ -196,14 +179,14 @@ export function ModerationQueue() {
       </label>
 
       {error ? (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-lg bg-[var(--tone-danger-bg)] px-3 py-2 text-xs text-[var(--tone-danger-fg)]">{error}</p>
       ) : null}
       {message ? (
-        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{message}</p>
+        <p className="rounded-lg bg-[var(--tone-success-bg)] px-3 py-2 text-xs text-[var(--tone-success-fg)]">{message}</p>
       ) : null}
 
       {!loading && items.length === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Nada pendiente de moderar. Solo llegan aquí las incidencias cuyo autor marcó
           «compartir en Comunidad».
         </p>
@@ -213,28 +196,29 @@ export function ModerationQueue() {
         {items.map((item) => {
           const etiqueta = ESTADO_ETIQUETA[item.moderation_state] ?? {
             texto: item.moderation_state,
-            clase: "bg-slate-100 text-slate-700 border-slate-300",
+            tono: "neutral" as Tone,
           };
           return (
             <div
               key={item.incident_id}
-              className="grid gap-1.5 rounded-lg border border-[var(--line)] p-3 text-xs"
+              className="grid gap-1.5 rounded-lg border border-line p-3 text-xs"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 font-semibold ${etiqueta.clase}`}>
+                <Badge tone={etiqueta.tono} dot>
                   {etiqueta.texto}
-                </span>
-                <span className="font-mono text-slate-500">
+                </Badge>
+                <span className="font-mono text-muted">
                   {item.incident_id.slice(0, 8)}
                 </span>
-                <span className="text-slate-500">
-                  {item.category} · {item.location_zone_name ?? "Zona no definida"} ·{" "}
+                <span className="text-muted">
+                  {categoryLabels[item.category]} ·{" "}
+                  {item.location_zone_name ?? "Zona no definida"} ·{" "}
                   {new Date(item.created_at).toLocaleString()}
                 </span>
               </div>
 
-              <p className="text-slate-800">{item.description}</p>
-              <p className="text-slate-500">{motivoOculta(item)}</p>
+              <p className="text-ink">{item.description}</p>
+              <p className="text-muted">{motivoOculta(item)}</p>
 
               {item.evidence_id ? (
                 previews[item.incident_id] ? (
@@ -242,14 +226,14 @@ export function ModerationQueue() {
                   <img
                     src={previews[item.incident_id]}
                     alt="Evidencia de la incidencia"
-                    className="max-h-72 w-auto rounded-lg border border-[var(--line)]"
+                    className="max-h-72 w-auto rounded-lg border border-line"
                   />
                 ) : (
                   <button
                     type="button"
                     onClick={() => void verEvidencia(item)}
                     disabled={previewLoadingId === item.incident_id}
-                    className="w-fit rounded-lg border border-[var(--line)] px-3 py-1.5 font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                    className="w-fit rounded-lg border border-line px-3 py-1.5 font-semibold text-[var(--tone-success-fg)] hover:bg-brand-soft disabled:opacity-60"
                   >
                     {previewLoadingId === item.incident_id
                       ? "Cargando evidencia..."
@@ -257,11 +241,11 @@ export function ModerationQueue() {
                   </button>
                 )
               ) : (
-                <p className="text-slate-400">Esta incidencia no tiene fotografía adjunta.</p>
+                <p className="text-subtle">Esta incidencia no tiene fotografía adjunta.</p>
               )}
 
               {item.last_decision ? (
-                <p className="rounded bg-slate-50 px-2 py-1 text-slate-600">
+                <p className="rounded bg-sunken px-2 py-1 text-body">
                   {item.last_decision.published ? "Publicada" : "Retirada"} por{" "}
                   <strong>{item.last_decision.actor_label}</strong> el{" "}
                   {new Date(item.last_decision.created_at).toLocaleString()}
@@ -280,7 +264,7 @@ export function ModerationQueue() {
                     type="button"
                     onClick={() => void decidir(item, false)}
                     disabled={actingId === item.incident_id}
-                    className="rounded-lg border border-[var(--line)] px-3 py-1.5 font-semibold disabled:opacity-50"
+                    className="rounded-lg border border-line px-3 py-1.5 font-semibold disabled:opacity-50"
                   >
                     {actingId === item.incident_id ? "Aplicando..." : "Retirar del feed"}
                   </button>
@@ -289,7 +273,7 @@ export function ModerationQueue() {
                     type="button"
                     onClick={() => void decidir(item, true)}
                     disabled={actingId === item.incident_id}
-                    className="rounded-lg bg-emerald-700 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                    className="rounded-lg bg-brand px-3 py-1.5 font-semibold text-on-brand disabled:opacity-50"
                   >
                     {actingId === item.incident_id ? "Aplicando..." : "Publicar en el feed"}
                   </button>

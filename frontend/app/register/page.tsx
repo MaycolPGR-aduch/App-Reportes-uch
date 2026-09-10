@@ -7,6 +7,7 @@ import { AuthCard } from "@/components/auth-card";
 import { PasswordInput } from "@/components/password-input";
 import { registerUser } from "@/lib/api-client";
 import { rutaDeRetornoSegura } from "@/lib/next-url";
+import { Field, Input } from "@/components/ui";
 
 function RegisterForm() {
   const next = rutaDeRetornoSegura(useSearchParams().get("next"));
@@ -48,7 +49,7 @@ function RegisterForm() {
     <AuthCard
       kicker="Acceso Campus"
       title="Crea tu cuenta"
-      subtitle="Necesitas un correo institucional. Reportar de forma anonima no requiere cuenta."
+      subtitle="Necesitas un correo institucional. Reportar de forma anónima no requiere cuenta."
       error={error}
       notice={notice}
       loading={loading}
@@ -58,61 +59,69 @@ function RegisterForm() {
       onSubmit={handleSubmit}
       footer={
         <>
-          <Link className="font-semibold text-emerald-800 hover:underline" href={`/login${consulta}`}>
+          <Link className="font-semibold text-brand-text hover:underline" href={`/login${consulta}`}>
             Ya tengo cuenta
           </Link>
-          <Link className="font-semibold text-emerald-800 hover:underline" href="/">
+          <Link className="font-semibold text-brand-text hover:underline" href="/">
             Reportar sin cuenta
           </Link>
         </>
       }
     >
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Codigo campus
-        <input
-          className="admin-login-input"
-          value={campusId}
-          onChange={(e) => setCampusId(e.target.value)}
-          placeholder="u20260001"
-          autoComplete="username"
-          required
-        />
-      </label>
+      <Field label="Código campus">
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            aria-describedby={describedBy}
+            value={campusId}
+            onChange={(e) => setCampusId(e.target.value)}
+            placeholder="u20260001"
+            autoComplete="username"
+            required
+          />
+        )}
+      </Field>
 
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Nombre completo
-        <input
-          className="admin-login-input"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          autoComplete="name"
-          required
-        />
-      </label>
+      <Field label="Nombre completo">
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            aria-describedby={describedBy}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            autoComplete="name"
+            required
+          />
+        )}
+      </Field>
 
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Correo institucional
-        <input
-          className="admin-login-input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type="email"
-          autoComplete="email"
-          required
-        />
-      </label>
+      <Field label="Correo institucional">
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            aria-describedby={describedBy}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            required
+          />
+        )}
+      </Field>
 
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Contrasena
-        <PasswordInput
-          className="admin-login-input"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="new-password"
-          minLength={8}
-          required
-        />
-      </label>
+      <Field label="Contraseña" hint="Al menos 8 caracteres.">
+        {({ id, describedBy }) => (
+          <PasswordInput
+            id={id}
+            aria-describedby={describedBy}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            minLength={8}
+            required
+          />
+        )}
+      </Field>
     </AuthCard>
   );
 }

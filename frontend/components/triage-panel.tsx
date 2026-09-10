@@ -84,12 +84,12 @@ export function TriagePanel({ item, onDone }: Props) {
   };
 
   return (
-    <div className="grid gap-2 rounded-lg border border-[var(--line)] bg-slate-50/60 p-3">
+    <div className="grid gap-2 rounded-lg border border-line bg-sunken p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-body">
           Clasificación
         </h4>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+        <span className="rounded-full bg-sunken px-2 py-0.5 text-[10px] font-semibold text-body">
           {item.governance_mode === "MANUAL"
             ? "Manual"
             : item.governance_mode === "AI_ASSISTED"
@@ -97,14 +97,14 @@ export function TriagePanel({ item, onDone }: Props) {
               : "Régimen anterior"}
         </span>
         {confianzaBaja ? (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+          <span className="rounded-full bg-[var(--tone-warning-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--tone-warning-fg)]">
             Confianza baja
           </span>
         ) : null}
       </div>
 
       {/* Las tres versiones del caso, que es lo que el estudio compara. */}
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600 sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-body sm:grid-cols-3">
         <div>
           <dt className="font-semibold">Eligió quien reportó</dt>
           <dd>{nombreCategoria(item.reported_category)}</dd>
@@ -121,7 +121,7 @@ export function TriagePanel({ item, onDone }: Props) {
                   : ""}
               </>
             ) : (
-              <span className="text-slate-400">Sin recomendación</span>
+              <span className="text-subtle">Sin recomendación</span>
             )}
           </dd>
         </div>
@@ -134,10 +134,10 @@ export function TriagePanel({ item, onDone }: Props) {
       </dl>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="grid gap-1 text-[11px] font-semibold text-slate-700">
+        <label className="grid gap-1 text-[11px] font-semibold text-body">
           Categoría
           <select
-            className="rounded-lg border border-[var(--line)] px-2 py-1 text-xs"
+            className="rounded-lg border border-line px-2 py-1 text-xs"
             value={categoria}
             onChange={(e) => setCategoria(e.target.value as IncidentCategory)}
           >
@@ -149,10 +149,10 @@ export function TriagePanel({ item, onDone }: Props) {
           </select>
         </label>
 
-        <label className="grid gap-1 text-[11px] font-semibold text-slate-700">
+        <label className="grid gap-1 text-[11px] font-semibold text-body">
           Prioridad
           <select
-            className="rounded-lg border border-[var(--line)] px-2 py-1 text-xs"
+            className="rounded-lg border border-line px-2 py-1 text-xs"
             value={prioridad}
             onChange={(e) => setPrioridad(e.target.value as PriorityLevel)}
           >
@@ -168,7 +168,7 @@ export function TriagePanel({ item, onDone }: Props) {
           <button
             type="button"
             onClick={aceptarPropuesta}
-            className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+            className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-[var(--tone-success-fg)] hover:bg-brand-soft"
           >
             Usar la de la IA
           </button>
@@ -178,10 +178,10 @@ export function TriagePanel({ item, onDone }: Props) {
       {/* El motivo solo se pide al apartarse de la recomendación: exigirlo
           siempre lo convertiría en un trámite que se rellena sin pensar. */}
       {difiereDeLaIA ? (
-        <label className="grid gap-1 text-[11px] font-semibold text-slate-700">
+        <label className="grid gap-1 text-[11px] font-semibold text-body">
           Motivo de la corrección
           <input
-            className="rounded-lg border border-[var(--line)] px-2 py-1 text-xs"
+            className="rounded-lg border border-line px-2 py-1 text-xs"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
             placeholder="Por qué no se acepta la propuesta de la IA"
@@ -191,18 +191,18 @@ export function TriagePanel({ item, onDone }: Props) {
       ) : null}
 
       {error ? (
-        <p role="alert" className="rounded bg-red-50 px-2 py-1 text-[11px] text-red-700">
+        <p role="alert" className="rounded bg-[var(--tone-danger-bg)] px-2 py-1 text-[11px] text-[var(--tone-danger-fg)]">
           {error}
         </p>
       ) : null}
       {aviso ? (
-        <p role="status" className="rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">
+        <p role="status" className="rounded bg-[var(--tone-success-bg)] px-2 py-1 text-[11px] text-[var(--tone-success-fg)]">
           {aviso}
         </p>
       ) : null}
 
       {item.last_triage ? (
-        <p className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+        <p className="rounded bg-sunken px-2 py-1 text-[11px] text-body">
           Clasificada por <strong>{item.last_triage.actor_label}</strong> el{" "}
           {new Date(item.last_triage.created_at).toLocaleString()}
           {item.last_triage.reason ? ` · ${item.last_triage.reason}` : ""}
@@ -213,7 +213,7 @@ export function TriagePanel({ item, onDone }: Props) {
         type="button"
         onClick={() => void guardar()}
         disabled={guardando}
-        className="justify-self-start rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+        className="justify-self-start rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-50"
       >
         {guardando ? "Guardando…" : difiereDeLaIA ? "Guardar corrección" : "Confirmar"}
       </button>

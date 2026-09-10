@@ -1,18 +1,43 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
+import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import Script from "next/script";
 import { PwaRegister } from "@/components/pwa-register";
-import { NavSession } from "@/components/nav-session";
+import { AppHeader } from "@/components/app-header";
+import { themeBootstrapScript } from "@/components/theme-toggle";
 import "./globals.css";
+
+/*
+ * Tres cortes con un trabajo cada uno: Jakarta para titulares, Inter para
+ * la interfaz y JetBrains para lo que se copia y se compara carácter a
+ * carácter —identificadores de incidencia y coordenadas—. Las tres son
+ * variables, así que pesan un archivo por familia y no uno por grosor.
+ */
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  display: "swap",
+});
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Campus Alertas",
-  description: "Reporte agil de incidencias universitarias",
+  description: "Reporta y sigue incidencias del campus en menos de 30 segundos.",
   manifest: "/manifest.webmanifest",
   applicationName: "Campus Alertas",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f766e",
+  // Un color por tema: la barra del navegador acompaña a la aplicación en vez
+  // de quedarse en verde sobre una interfaz oscura.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f4f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a101c" },
+  ],
 };
 
 export default function RootLayout({
@@ -21,29 +46,30 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">
+    <html
+      lang="es"
+      className={`h-full ${inter.variable} ${jakarta.variable} ${jetbrains.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="flex min-h-full flex-col">
+        {/* `beforeInteractive` lo inyecta en el HTML inicial y lo ejecuta antes
+            que cualquier módulo de Next, que es justo lo que hace falta para
+            que el tema oscuro no pase por un fogonazo blanco. Un <script>
+            suelto haría lo mismo, pero React avisa de que no se ejecuta al
+            renderizar en cliente. */}
+        <Script
+          id="tema-inicial"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
+        />
+        <a href="#contenido" className="skip-link">
+          Saltar al contenido
+        </a>
         <PwaRegister />
-        <header className="border-b border-white/60 bg-white/80 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-            <Link href="/" className="font-heading text-lg font-semibold text-emerald-900">
-              Campus Alertas
-            </Link>
-            <nav className="flex items-center gap-2 text-sm font-medium text-emerald-900">
-              <Link className="rounded-full px-3 py-1.5 hover:bg-emerald-100" href="/">
-                Reportar
-              </Link>
-              <NavSession />
-              <Link
-                className="rounded-full bg-emerald-700 px-3 py-1.5 text-white hover:bg-emerald-800"
-                href="/dashboard"
-              >
-                Dashboard
-              </Link>
-            </nav>
-          </div>
-        </header>
-        {children}
+        <AppHeader />
+        <div id="contenido" className="flex flex-1 flex-col">
+          {children}
+        </div>
       </body>
     </html>
   );

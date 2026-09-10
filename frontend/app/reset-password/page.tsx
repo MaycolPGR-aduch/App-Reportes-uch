@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { PasswordInput } from "@/components/password-input";
 import { FormEvent, Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AuthCard } from "@/components/auth-card";
+import { PasswordInput } from "@/components/password-input";
 import { confirmPasswordReset } from "@/lib/api-client";
+import { Field } from "@/components/ui";
 
 function ResetPasswordForm() {
   const token = useSearchParams().get("token") ?? "";
@@ -28,22 +30,46 @@ function ResetPasswordForm() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 items-center px-4 py-12">
-      <form onSubmit={submit} className="grid w-full gap-4 rounded-2xl border border-[var(--line)] bg-white p-6">
-        <h1 className="font-heading text-2xl font-bold text-emerald-950">Restablecer contraseña</h1>
-        <PasswordInput minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} className="rounded-lg border border-[var(--line)] px-3 py-2" placeholder="Nueva contraseña" />
-        {!token ? <p className="text-sm text-red-700">El enlace es inválido o está incompleto.</p> : null}
-        {message ? <p className="text-sm text-emerald-800">{message}</p> : null}
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
-        <button disabled={!token || loading} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-60">
-          {loading ? "Actualizando..." : "Actualizar contraseña"}
-        </button>
-        <Link href="/dashboard" className="text-sm font-semibold text-emerald-800">Ir al login</Link>
-      </form>
-    </main>
+    <AuthCard
+      kicker="Acceso Campus"
+      title="Restablecer contraseña"
+      subtitle="Elige una contraseña nueva para tu cuenta."
+      // Un enlace roto es un error de entrada, no un fallo del envío: se avisa
+      // antes de que nadie escriba una contraseña que no se va a poder guardar.
+      error={!token ? "El enlace es inválido o está incompleto." : error}
+      notice={message}
+      loading={loading}
+      disabled={!token || Boolean(message)}
+      submitLabel="Actualizar contraseña"
+      loadingLabel="Actualizando..."
+      onSubmit={submit}
+      footer={
+        <Link href="/login" className="font-semibold text-brand-text hover:underline">
+          Ir al inicio de sesión
+        </Link>
+      }
+    >
+      <Field label="Nueva contraseña" hint="Al menos 8 caracteres.">
+        {({ id, describedBy }) => (
+          <PasswordInput
+            id={id}
+            aria-describedby={describedBy}
+            minLength={8}
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+          />
+        )}
+      </Field>
+    </AuthCard>
   );
 }
 
 export default function ResetPasswordPage() {
-  return <Suspense><ResetPasswordForm /></Suspense>;
+  return (
+    <Suspense fallback={<main className="flex flex-1 items-center justify-center p-8" />}>
+      <ResetPasswordForm />
+    </Suspense>
+  );
 }

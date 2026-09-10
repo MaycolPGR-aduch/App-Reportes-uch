@@ -137,7 +137,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
         <h3 className="text-sm font-semibold">
           {zonaEnEdicion ? `Recapturar «${zonaEnEdicion.name}»` : "Capturar zona caminando"}
         </h3>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Colócate en cada esquina de la zona y pulsa el botón. Quédate quieto los{" "}
           {SEGUNDOS_POR_VERTICE} segundos que dura la lectura.
         </p>
@@ -147,7 +147,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
         type="button"
         onClick={capturarVertice}
         disabled={capturando}
-        className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-semibold text-white disabled:opacity-70"
+        className="rounded-xl bg-brand px-4 py-4 text-base font-semibold text-on-brand disabled:opacity-70"
       >
         {capturando
           ? `Midiendo... ${restante}s · ${muestras} lectura(s)`
@@ -155,17 +155,17 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
       </button>
 
       {error ? (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-lg bg-[var(--tone-danger-bg)] px-3 py-2 text-xs text-[var(--tone-danger-fg)]">{error}</p>
       ) : null}
 
       {vertices.length > 0 ? (
-        <div className="grid gap-1 rounded-lg border border-[var(--line)] p-2">
+        <div className="grid gap-1 rounded-lg border border-line p-2">
           {vertices.map((v, i) => (
             <div key={`${v.lat}-${v.lng}-${i}`} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-slate-600">
+              <span className="font-mono text-body">
                 {i + 1}. {v.lat.toFixed(6)}, {v.lng.toFixed(6)}
                 {v.accuracy !== null ? (
-                  <span className={v.accuracy > PRECISION_ACEPTABLE_M ? "text-red-600" : "text-slate-400"}>
+                  <span className={v.accuracy > PRECISION_ACEPTABLE_M ? "text-[var(--tone-danger-fg)]" : "text-subtle"}>
                     {" "}· ±{Math.round(v.accuracy)} m
                   </span>
                 ) : null}
@@ -173,7 +173,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
               <button
                 type="button"
                 onClick={() => setVertices((vs) => vs.filter((_, idx) => idx !== i))}
-                className="rounded border border-[var(--line)] px-2 py-0.5 text-slate-600"
+                className="rounded border border-line px-2 py-0.5 text-body"
               >
                 Quitar
               </button>
@@ -182,7 +182,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
           <button
             type="button"
             onClick={() => setVertices([])}
-            className="mt-1 w-fit rounded border border-[var(--line)] px-2 py-1 text-xs"
+            className="mt-1 w-fit rounded border border-line px-2 py-1 text-xs"
           >
             Empezar de nuevo
           </button>
@@ -193,7 +193,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
         <div className="grid gap-2">
           <svg
             viewBox={`0 0 ${ANCHO} ${ALTO}`}
-            className="w-full rounded-lg border border-[var(--line)] bg-slate-50"
+            className="w-full rounded-lg border border-line bg-sunken"
             role="img"
             aria-label="Vista previa de la zona capturada"
           >
@@ -226,7 +226,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
           </svg>
 
           <div className="grid gap-1 text-xs">
-            <p className="text-slate-700">
+            <p className="text-body">
               Superficie aproximada: <strong>{Math.round(superficie).toLocaleString()} m²</strong> ·
               perímetro {Math.round(
                 vertices.reduce(
@@ -236,19 +236,19 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
               )} m
             </p>
             {cruzado ? (
-              <p className="rounded bg-red-50 px-2 py-1 text-red-700">
+              <p className="rounded bg-[var(--tone-danger-bg)] px-2 py-1 text-[var(--tone-danger-fg)]">
                 El polígono se cruza consigo mismo. Revisa el orden de los vértices: deben
                 recorrerse siguiendo el perímetro, sin saltar de una esquina a la opuesta.
               </p>
             ) : null}
             {imprecisos > 0 ? (
-              <p className="rounded bg-amber-50 px-2 py-1 text-amber-800">
+              <p className="rounded bg-[var(--tone-warning-bg)] px-2 py-1 text-[var(--tone-warning-fg)]">
                 {imprecisos} vértice(s) con precisión peor de {PRECISION_ACEPTABLE_M} m. Puedes
                 quitarlos y volver a medirlos con mejor señal.
               </p>
             ) : null}
             {solapadas.length > 0 ? (
-              <p className="rounded bg-amber-50 px-2 py-1 text-amber-800">
+              <p className="rounded bg-[var(--tone-warning-bg)] px-2 py-1 text-[var(--tone-warning-fg)]">
                 Se solapa con: <strong>{solapadas.join(", ")}</strong>. No impide guardar; el
                 sistema resuelve el solape por prioridad y superficie.
               </p>
@@ -259,7 +259,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
             type="button"
             onClick={() => void onGuardar(verticesAGeoJSON(vertices))}
             disabled={guardando || cruzado}
-            className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-on-brand disabled:opacity-50"
           >
             {guardando
               ? "Guardando..."
@@ -269,7 +269,7 @@ export function ZoneCapture({ zonasExistentes, zonaEnEdicion, onGuardar, guardan
           </button>
         </div>
       ) : (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Se necesitan al menos 3 vértices para formar una zona.
         </p>
       )}
