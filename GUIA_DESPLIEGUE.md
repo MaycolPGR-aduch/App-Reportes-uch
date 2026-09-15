@@ -172,7 +172,7 @@ Volver a Render y rellenar las dos variables que dependían de datos que hasta
 ahora no existían:
 
 ```
-CORS_ORIGINS  = https://campus-alertas.vercel.app
+CORS_ORIGINS  = https://app-reportes-uch.vercel.app
 TRUSTED_HOSTS = campus-alertas-api.onrender.com
 ```
 
