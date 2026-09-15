@@ -63,6 +63,8 @@ from app.schemas.admin import (
     ModerationQueueItem,
     ModerationQueueResponse,
     StaffAssignmentItem,
+    AssignmentListItem,
+    AssignmentListResponse,
     StaffAssignmentListResponse,
     StaffCreateRequest,
     StaffListResponse,
@@ -1064,6 +1066,90 @@ def update_staff(
         staff,
         pending=int((counts[0] if counts else 0) or 0),
         completed=int((counts[1] if counts else 0) or 0),
+    )
+
+
+def esta_vencida(assignment: IncidentAssignment, ahora: datetime) -> bool:
+    """Vencida y sin completar.
+
+    Una asignacion completada nunca esta vencida aunque su plazo haya pasado:
+    ya se atendio. Y sin plazo no hay nada que vencer.
+    """
+    return (
+        assignment.due_at is not None
+        and assignment.completed_at is None
+        and assignment.due_at < ahora
+    )
+
+
+@router.get("/assignments", response_model=AssignmentListResponse)
+def list_assignments(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    status_filter: AssignmentStatus | None = Query(default=None),
+    category: IncidentCategory | None = Query(default=None),
+    responsible_id: UUID | None = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> AssignmentListResponse:
+    """Todas las asignaciones, filtrables y paginadas.
+
+    Hasta ahora solo existia el listado por persona: para saber que se habia
+    encomendado en un dia habia que abrir la carga de cada responsable, uno
+    por uno. El rango de fechas va sobre `assigned_at`, que es el momento en
+    que la asignacion se creo.
+    """
+    query = (
+        db.query(IncidentAssignment, Incident, IncidentLocation, Responsible)
+        .join(Incident, Incident.id == IncidentAssignment.incident_id)
+        .join(Responsible, Responsible.id == IncidentAssignment.responsible_id)
+        .outerjoin(IncidentLocation, IncidentLocation.incident_id == Incident.id)
+    )
+    if date_from is not None:
+        query = query.filter(IncidentAssignment.assigned_at >= date_from)
+    if date_to is not None:
+        query = query.filter(IncidentAssignment.assigned_at <= date_to)
+    if status_filter is not None:
+        query = query.filter(IncidentAssignment.status == status_filter)
+    if category is not None:
+        query = query.filter(Incident.category == category)
+    if responsible_id is not None:
+        query = query.filter(IncidentAssignment.responsible_id == responsible_id)
+
+    total = query.with_entities(func.count(IncidentAssignment.id)).scalar() or 0
+    rows = (
+        query.order_by(IncidentAssignment.assigned_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    ahora = datetime.now(timezone.utc)
+    return AssignmentListResponse(
+        total=total,
+        items=[
+            AssignmentListItem(
+                assignment_id=assignment.id,
+                incident_id=incident.id,
+                incident_category=incident.category,
+                incident_priority=incident.priority,
+                incident_status=incident.status,
+                incident_zone_name=location.resolved_zone_name if location else None,
+                assignment_status=assignment.status,
+                incident_description=incident.description,
+                assigned_at=assignment.assigned_at,
+                due_at=assignment.due_at,
+                completed_at=assignment.completed_at,
+                responsible_id=responsible.id,
+                responsible_name=responsible.full_name,
+                responsible_area=responsible.area_name,
+                notes=assignment.notes,
+                overdue=esta_vencida(assignment, ahora),
+            )
+            for assignment, incident, location, responsible in rows
+        ],
     )
 
 

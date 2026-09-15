@@ -845,6 +845,37 @@ export async function updateStaff(
   });
 }
 
+export type AssignmentListItem = StaffAssignmentItem & {
+  responsible_id: string;
+  responsible_name: string;
+  responsible_area: string;
+  notes: string | null;
+  /** Vencida y sin completar. Lo calcula el servidor. */
+  overdue: boolean;
+};
+
+export type AssignmentListFilters = {
+  date_from?: string;
+  date_to?: string;
+  status_filter?: AssignmentStatus;
+  category?: IncidentCategory;
+  responsible_id?: string;
+  limit?: number;
+  offset?: number;
+};
+
+/** Todas las asignaciones, filtrables y paginadas. */
+export async function listAssignments(
+  filters: AssignmentListFilters = {},
+): Promise<{ total: number; items: AssignmentListItem[] }> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  }
+  const qs = params.toString();
+  return request(`/admin/assignments${qs ? `?${qs}` : ""}`);
+}
+
 export async function listStaffAssignments(
   staffId: string,
   params?: {

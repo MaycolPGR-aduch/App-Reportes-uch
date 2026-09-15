@@ -25,6 +25,7 @@ import {
   statusTones,
 } from "@/lib/labels";
 import { useConfirm } from "@/components/confirm-dialog";
+import { AssignmentsList } from "@/components/admin/assignments-list";
 import {
   Alert,
   Badge,
@@ -49,6 +50,9 @@ export function AssignmentsSection() {
 
   const [pool, setPool] = useState<IncidentListItem[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  // Cambia cuando una asignacion se crea o cambia de estado: el listado
+  // global se remonta y vuelve a pedir sus datos.
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export function AssignmentsSection() {
         notify,
       });
       setNotice(response.message);
+      setRefreshKey((k) => k + 1);
       setNotes("");
       await Promise.all([load(), loadAssignments(staffId)]);
     } catch (cause) {
@@ -178,6 +183,7 @@ export function AssignmentsSection() {
     try {
       const response = await updateIncidentStatusAdmin(incidentId, { status: manualStatus });
       setNotice(response.message);
+      setRefreshKey((k) => k + 1);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo actualizar el estado");
@@ -192,6 +198,7 @@ export function AssignmentsSection() {
     try {
       const response = await updateAssignmentStatus(assignmentId, { status });
       setNotice(response.message);
+      setRefreshKey((k) => k + 1);
       await Promise.all([load(), staffId ? loadAssignments(staffId) : Promise.resolve()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo actualizar la asignación");
@@ -204,6 +211,11 @@ export function AssignmentsSection() {
     <div className="grid gap-4">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {notice ? <Alert tone="success">{notice}</Alert> : null}
+
+      {/* La vista de conjunto va primero: es lo que se consulta a diario.
+          El flujo de asignar, debajo, es la operacion. `key` fuerza la
+          recarga del listado cuando una asignacion nueva cambia el total. */}
+      <AssignmentsList staff={staff} key={refreshKey} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

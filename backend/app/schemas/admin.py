@@ -154,6 +154,27 @@ class StaffAssignmentListResponse(BaseModel):
     items: list[StaffAssignmentItem]
 
 
+class AssignmentListItem(StaffAssignmentItem):
+    """Una asignacion vista desde el listado global.
+
+    Extiende al item por persona con quien la atiende: en aquel listado el
+    responsable es implicito, aqui hay que decirlo en cada fila.
+    """
+
+    responsible_id: UUID
+    responsible_name: str
+    responsible_area: str
+    notes: str | None
+    #: Vencida y sin completar. Se calcula en el servidor para que el listado
+    #: no dependa del reloj del navegador.
+    overdue: bool
+
+
+class AssignmentListResponse(BaseModel):
+    total: int
+    items: list[AssignmentListItem]
+
+
 class ManualAssignIncidentRequest(BaseModel):
     responsible_id: UUID
     notes: str | None = Field(default=None, max_length=300)
