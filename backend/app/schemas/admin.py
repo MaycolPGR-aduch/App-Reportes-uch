@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.incident import ModerationDecisionOut, TriageDecisionOut
 from app.models.enums import (
     AssignmentStatus,
     GovernanceMode,
@@ -224,24 +225,6 @@ class IncidentLocationResolveResponse(BaseModel):
     location_status: str
     location_confidence: float | None
     message: str
-
-
-class TriageDecisionOut(BaseModel):
-    actor_label: str
-    final_category: IncidentCategory
-    final_priority: PriorityLevel
-    ai_suggested_category: IncidentCategory | None
-    ai_suggested_priority: PriorityLevel | None
-    reason: str | None
-    created_at: datetime
-
-
-class ModerationDecisionOut(BaseModel):
-    actor_label: str
-    published: bool
-    reason: str | None
-    ai_verdict: str | None
-    created_at: datetime
 
 
 class ModerationQueueItem(BaseModel):

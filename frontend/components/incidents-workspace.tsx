@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ModerationPanel } from "@/components/moderation-panel";
+import { TriagePanel } from "@/components/triage-panel";
 import {
   IncidentCategory,
   IncidentDetail,
@@ -66,6 +68,8 @@ export function IncidentsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // Tras triar o moderar, el detalle y el listado deben reflejar el cambio.
+  const [detailVersion, setDetailVersion] = useState(0);
 
   const [evidenceLoadingId, setEvidenceLoadingId] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
@@ -114,7 +118,13 @@ export function IncidentsWorkspace() {
     return () => {
       current = false;
     };
-  }, [selectedId]);
+    // detailVersion fuerza la recarga tras una decision sobre esta incidencia.
+  }, [selectedId, detailVersion]);
+
+  const afterDecision = useCallback(() => {
+    setDetailVersion((v) => v + 1);
+    void fetchList();
+  }, [fetchList]);
 
   useEffect(() => {
     return () => {
@@ -300,6 +310,15 @@ export function IncidentsWorkspace() {
                           </Badge>
                           <Badge tone="neutral">{categoryLabels[item.category]}</Badge>
                           <Badge tone={statusTones[item.status]}>{statusLabels[item.status]}</Badge>
+                          {/* Sustituye a la antigua cola de moderación: señala
+                              de un vistazo cuáles esperan decisión de publicación. */}
+                          {item.community_consent && !item.is_community_visible ? (
+                            <Badge tone="warning" dot>
+                              Pendiente de comunidad
+                            </Badge>
+                          ) : item.is_community_visible ? (
+                            <Badge tone="success">En comunidad</Badge>
+                          ) : null}
                           <span
                             className="ml-auto text-xs text-subtle"
                             title={readableDate(item.created_at)}
@@ -349,6 +368,7 @@ export function IncidentsWorkspace() {
                 onOpenEvidence={openEvidence}
                 evidenceLoadingId={evidenceLoadingId}
                 evidenceError={evidenceError}
+                onDecision={afterDecision}
               />
             )}
           </CardBody>
@@ -365,11 +385,13 @@ function IncidentDetailView({
   onOpenEvidence,
   evidenceLoadingId,
   evidenceError,
+  onDecision,
 }: {
   detail: IncidentDetail;
   onOpenEvidence: (incidentId: string, evidenceId: string) => void;
   evidenceLoadingId: string | null;
   evidenceError: string | null;
+  onDecision: () => void;
 }) {
   return (
     <>
@@ -482,6 +504,23 @@ function IncidentDetailView({
           </Alert>
         ) : null}
       </Bloque>
+
+      {detail.governance ? (
+        <>
+          {/* Triaje y moderacion son decisiones distintas y aqui viven juntas:
+              el triaje aplica a toda incidencia; la moderacion solo cuando
+              quien reporto consintio publicarse, y el panel lo dice si no. */}
+          <TriagePanel
+            item={{ incident_id: detail.id, category: detail.category,
+                    priority: detail.priority, ...detail.governance }}
+            onDone={onDecision}
+          />
+          <ModerationPanel
+            item={{ incident_id: detail.id, ...detail.governance }}
+            onDone={onDecision}
+          />
+        </>
+      ) : null}
 
       {detail.ai_metrics.length > 0 ? (
         <Bloque titulo="Análisis de la IA">

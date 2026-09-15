@@ -4,7 +4,19 @@ de moderación y cómo se traduce el veredicto de la IA al registro de auditorí
 
 from types import SimpleNamespace
 
-from app.api.v1.admin import _ai_verdict, _moderation_state
+from app.services.governance_view import estado_de_moderacion, veredicto_de
+
+
+def _ai_verdict(metric):
+    """Adaptador: las pruebas se escribieron sobre la forma de tupla."""
+    v = veredicto_de(metric)
+    return v.evaluada, v.apropiada, v.es_incidencia, v.motivo
+
+
+def _moderation_state(*, incident, metric, decision):
+    return estado_de_moderacion(
+        incident=incident, veredicto=veredicto_de(metric), decision=decision
+    )
 
 
 def _metric(**raw):

@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import {
+  GovernanceMode,
   IncidentCategory,
-  ModerationQueueItem,
   PriorityLevel,
+  TriageDecisionInfo,
   triageIncident,
 } from "@/lib/api-client";
 
@@ -29,8 +30,27 @@ const nombrePrioridad = (p: PriorityLevel | null) =>
 /** Por debajo de esto la recomendación merece más desconfianza que atención. */
 const CONFIANZA_BAJA = 0.75;
 
+/**
+ * Lo mínimo que el panel necesita saber de una incidencia.
+ *
+ * Es un subconjunto a propósito: así lo alimenta tanto el detalle de la
+ * pestaña de incidencias como cualquier otra vista, sin que el panel dependa
+ * de la forma completa de ninguna de ellas.
+ */
+export type TriageSubject = {
+  incident_id: string;
+  category: IncidentCategory;
+  priority: PriorityLevel;
+  reported_category: IncidentCategory | null;
+  governance_mode: GovernanceMode;
+  ai_suggested_category: IncidentCategory | null;
+  ai_suggested_priority: PriorityLevel | null;
+  ai_confidence: number | null;
+  last_triage: TriageDecisionInfo | null;
+};
+
 type Props = {
-  item: ModerationQueueItem;
+  item: TriageSubject;
   onDone: () => void;
 };
 

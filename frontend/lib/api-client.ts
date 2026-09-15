@@ -22,6 +22,8 @@ export type IncidentListItem = {
   location_status: string | null;
   assignment_count: number;
   assigned_to: string[];
+  community_consent: boolean;
+  is_community_visible: boolean;
 };
 
 export type IncidentListResponse = {
@@ -67,6 +69,27 @@ export type CommunityFeedResponse = {
 export type ReactionState = {
   reaction_count: number;
   reacted_by_me: boolean;
+};
+
+/**
+ * Lo que un administrador necesita para triar y moderar una incidencia.
+ * Solo llega para administradores; para quien reporta es `null`.
+ */
+export type IncidentGovernance = {
+  governance_mode: GovernanceMode;
+  reported_category: IncidentCategory | null;
+  ai_suggested_category: IncidentCategory | null;
+  ai_suggested_priority: PriorityLevel | null;
+  ai_confidence: number | null;
+  ai_evaluated: boolean;
+  ai_is_appropriate: boolean | null;
+  ai_is_incident: boolean | null;
+  ai_reason: string | null;
+  last_triage: TriageDecisionInfo | null;
+  community_consent: boolean;
+  is_community_visible: boolean;
+  moderation_state: string;
+  last_decision: ModerationDecisionInfo | null;
 };
 
 export type IncidentDetail = {
@@ -136,6 +159,8 @@ export type IncidentDetail = {
     sent_at: string | null;
     created_at: string;
   }>;
+  // Solo para administradores; null para quien reporta.
+  governance: IncidentGovernance | null;
 };
 
 export type ModerationDecisionInfo = {

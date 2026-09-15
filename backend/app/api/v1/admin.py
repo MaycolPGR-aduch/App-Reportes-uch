@@ -31,6 +31,13 @@ from app.models.incident import Incident
 from app.models.job import Job
 from app.models.moderation_decision import ModerationDecision
 from app.models.triage_decision import TriageDecision
+from app.services.governance_view import (
+    estado_de_moderacion,
+    ultima_decision,
+    ultima_metrica,
+    ultimo_triaje,
+    veredicto_de,
+)
 from app.models.location import IncidentLocation
 from app.models.responsible import Responsible
 from app.models.user import User
@@ -1522,54 +1529,6 @@ def update_incident_status(
 # La visibilidad comunitaria la decide la IA cuando está disponible, pero la
 # palabra final es del administrador: es quien responde ante la institución.
 
-def _ai_verdict(metric: AIMetric | None) -> tuple[bool, bool | None, bool | None, str | None]:
-    """(evaluada, apropiada, es_incidencia, motivo) a partir de la métrica."""
-    if metric is None:
-        return False, None, None, None
-    raw = metric.raw_response or {}
-    appropriate = raw.get("is_appropriate")
-    is_incident = raw.get("is_incident")
-    reason = raw.get("reason") or None
-    return (
-        True,
-        bool(appropriate) if appropriate is not None else None,
-        bool(is_incident) if is_incident is not None else None,
-        str(reason)[:300] if reason else None,
-    )
-
-
-def _moderation_state(
-    *,
-    incident: Incident,
-    metric: AIMetric | None,
-    decision: ModerationDecision | None,
-) -> str:
-    if decision is not None:
-        # Compara contra la visibilidad real: si algo la cambió sin dejar
-        # decisión, la etiqueta no debe quedarse anclada al histórico y decir
-        # "publicada" sobre una incidencia que está oculta.
-        if decision.published == incident.is_community_visible:
-            return "PUBLICADA_MANUAL" if decision.published else "OCULTA_MANUAL"
-        return "PUBLICADA_IA" if incident.is_community_visible else "PENDIENTE_IA"
-    evaluated, appropriate, is_incident, _ = _ai_verdict(metric)
-    if not evaluated:
-        return "PENDIENTE_IA"
-    if incident.is_community_visible:
-        return "PUBLICADA_IA"
-    if appropriate is False or is_incident is False:
-        return "RECHAZADA_IA"
-    return "PENDIENTE_IA"
-
-
-def _latest_decision(db: Session, incident_id: UUID) -> ModerationDecision | None:
-    return (
-        db.query(ModerationDecision)
-        .filter(ModerationDecision.incident_id == incident_id)
-        .order_by(ModerationDecision.created_at.desc())
-        .first()
-    )
-
-
 @router.get("/moderation-queue", response_model=ModerationQueueResponse)
 def list_moderation_queue(
     include_published: bool = Query(default=False),
@@ -1606,14 +1565,15 @@ def list_moderation_queue(
             .order_by(AIMetric.created_at.desc())
             .first()
         )
-        decision = _latest_decision(db, incident.id)
+        decision = ultima_decision(db, incident.id)
         triaje = (
             db.query(TriageDecision)
             .filter(TriageDecision.incident_id == incident.id)
             .order_by(TriageDecision.created_at.desc())
             .first()
         )
-        evaluated, appropriate, is_incident, reason = _ai_verdict(metric)
+        v = veredicto_de(metric)
+        evaluated, appropriate, is_incident, reason = v.evaluada, v.apropiada, v.es_incidencia, v.motivo
         # Sin la fotografía no se puede decidir si el contenido es publicable.
         evidence = (
             db.query(IncidentEvidence)
@@ -1634,8 +1594,8 @@ def list_moderation_queue(
                 ),
                 is_community_visible=incident.is_community_visible,
                 evidence_id=evidence_id,
-                moderation_state=_moderation_state(
-                    incident=incident, metric=metric, decision=decision
+                moderation_state=estado_de_moderacion(
+                    incident=incident, veredicto=v, decision=decision
                 ),
                 ai_evaluated=evaluated,
                 ai_is_appropriate=appropriate,
@@ -1728,7 +1688,8 @@ def set_community_visibility(
         .order_by(AIMetric.created_at.desc())
         .first()
     )
-    evaluated, appropriate, is_incident, _ = _ai_verdict(metric)
+    _v = veredicto_de(metric)
+    evaluated, appropriate, is_incident = _v.evaluada, _v.apropiada, _v.es_incidencia
     if not evaluated:
         verdict = "SIN_EVALUAR"
     elif appropriate is False:

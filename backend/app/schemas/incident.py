@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import (
     AssignmentStatus,
+    GovernanceMode,
     IncidentCategory,
     IncidentStatus,
     NotificationStatus,
@@ -93,7 +94,52 @@ class IncidentListItem(BaseModel):
     # Sin esto el panel de asignación no puede distinguir una incidencia libre
     # de una ya encomendada, y las ofrecía todas por igual.
     assignment_count: int = 0
+    # Para que el listado señale de un vistazo cuáles esperan decisión de
+    # publicación, ahora que la cola de moderación ya no existe como vista.
+    community_consent: bool = False
+    is_community_visible: bool = False
     assigned_to: list[str] = []
+
+
+class TriageDecisionOut(BaseModel):
+    actor_label: str
+    final_category: IncidentCategory
+    final_priority: PriorityLevel
+    ai_suggested_category: IncidentCategory | None
+    ai_suggested_priority: PriorityLevel | None
+    reason: str | None
+    created_at: datetime
+
+
+class ModerationDecisionOut(BaseModel):
+    actor_label: str
+    published: bool
+    reason: str | None
+    ai_verdict: str | None
+    created_at: datetime
+
+
+class GovernanceOut(BaseModel):
+    """Lo que un administrador necesita para triar y moderar una incidencia.
+
+    Solo se incluye para administradores: contiene la propuesta de la IA y el
+    estado de moderacion, que no son asunto de quien reporta.
+    """
+
+    governance_mode: GovernanceMode
+    reported_category: IncidentCategory | None
+    ai_suggested_category: IncidentCategory | None
+    ai_suggested_priority: PriorityLevel | None
+    ai_confidence: float | None
+    ai_evaluated: bool
+    ai_is_appropriate: bool | None
+    ai_is_incident: bool | None
+    ai_reason: str | None
+    last_triage: TriageDecisionOut | None
+    community_consent: bool
+    is_community_visible: bool
+    moderation_state: str
+    last_decision: ModerationDecisionOut | None
 
 
 class IncidentDetail(BaseModel):
@@ -114,6 +160,8 @@ class IncidentDetail(BaseModel):
     ai_metrics: list[AIMetricOut]
     assignments: list[AssignmentOut]
     notifications: list[NotificationOut]
+    # Solo para administradores; None para quien reporta.
+    governance: GovernanceOut | None = None
 
 
 class IncidentListResponse(BaseModel):

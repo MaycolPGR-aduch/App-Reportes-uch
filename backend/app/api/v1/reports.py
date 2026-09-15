@@ -33,7 +33,10 @@ from app.schemas.incident import (
     AIMetricOut,
     AssignmentOut,
     EvidenceOut,
+    GovernanceOut,
     IncidentDetail,
+    ModerationDecisionOut,
+    TriageDecisionOut,
     IncidentListItem,
     IncidentListResponse,
     CommunityFeedItem,
@@ -53,11 +56,14 @@ from app.services.captcha import verify_turnstile
 from app.services.images import InvalidImageError, normalize_image
 from app.services.rate_limit import client_identifier, enforce_rate_limit
 from app.services.governance import resolver_modo, usa_ia
+from app.services.governance_view import vista_de_gobernanza
 from app.services.storage import EvidenceNotStored, get_storage_provider
 
 router = APIRouter(tags=["reports"])
 
-def _build_incident_detail(incident: Incident, *, include_sensitive: bool) -> IncidentDetail:
+def _build_incident_detail(
+    incident: Incident, *, include_sensitive: bool, db: Session | None = None
+) -> IncidentDetail:
     location = (
         LocationOut(
             latitude=incident.location.latitude,
@@ -149,6 +155,54 @@ def _build_incident_detail(incident: Incident, *, include_sensitive: bool) -> In
         ai_metrics=ai_metrics if include_sensitive else [],
         assignments=assignments,
         notifications=notifications if include_sensitive else [],
+        # Triaje y moderacion viven en el detalle de cualquier incidencia, no
+        # solo en la cola de moderacion: aquella filtra por consentimiento de
+        # publicacion, y las que no consentian quedaban sin forma de que un
+        # administrador confirmara su categoria y prioridad.
+        governance=_governance_out(db, incident) if include_sensitive and db else None,
+    )
+
+
+def _governance_out(db: Session, incident: Incident) -> GovernanceOut:
+    vista = vista_de_gobernanza(db, incident)
+    m, v, tr, dc = vista.metric, vista.veredicto, vista.triaje, vista.decision
+    return GovernanceOut(
+        governance_mode=incident.governance_mode,
+        reported_category=incident.reported_category,
+        ai_suggested_category=m.predicted_category if m else None,
+        ai_suggested_priority=m.priority_label if m else None,
+        ai_confidence=float(m.confidence) if m else None,
+        ai_evaluated=v.evaluada,
+        ai_is_appropriate=v.apropiada,
+        ai_is_incident=v.es_incidencia,
+        ai_reason=v.motivo,
+        last_triage=(
+            TriageDecisionOut(
+                actor_label=tr.actor_label,
+                final_category=tr.final_category,
+                final_priority=tr.final_priority,
+                ai_suggested_category=tr.ai_suggested_category,
+                ai_suggested_priority=tr.ai_suggested_priority,
+                reason=tr.reason,
+                created_at=tr.created_at,
+            )
+            if tr
+            else None
+        ),
+        community_consent=incident.community_consent,
+        is_community_visible=incident.is_community_visible,
+        moderation_state=vista.moderation_state,
+        last_decision=(
+            ModerationDecisionOut(
+                actor_label=dc.actor_label,
+                published=dc.published,
+                reason=dc.reason,
+                ai_verdict=dc.ai_verdict,
+                created_at=dc.created_at,
+            )
+            if dc
+            else None
+        ),
     )
 
 
@@ -397,6 +451,8 @@ def list_incidents(
             location_status=inc.location.location_status if inc.location else None,
             assignment_count=len(assignees.get(inc.id, [])),
             assigned_to=sorted(assignees.get(inc.id, [])),
+            community_consent=inc.community_consent,
+            is_community_visible=inc.is_community_visible,
         )
         for inc in incidents
     ]
@@ -788,7 +844,9 @@ def get_incident_detail(
         raise HTTPException(status_code=404, detail="Incident not found")
     if not _can_access_incident(db, incident, current_user):
         raise HTTPException(status_code=404, detail="Incident not found")
-    return _build_incident_detail(incident, include_sensitive=current_user.role == UserRole.ADMIN)
+    return _build_incident_detail(
+        incident, include_sensitive=current_user.role == UserRole.ADMIN, db=db
+    )
 
 
 @router.get("/incidents/{incident_id}/evidences/{evidence_id}")
