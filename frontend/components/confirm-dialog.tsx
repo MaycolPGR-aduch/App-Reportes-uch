@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Button } from "@/components/ui";
 
 export type ConfirmRequest = {
   title: string;
@@ -21,15 +22,28 @@ type PendingConfirm = ConfirmRequest & { resolve: (accepted: boolean) => void };
  * Se prefiere a `window.confirm` porque el diálogo nativo no admite formato,
  * no distingue una acción destructiva de una rutinaria y algunos navegadores
  * lo suprimen tras varios usos seguidos.
+ *
+ * Se apoya en `<dialog>` con `showModal()`, que trae de serie lo que la
+ * versión anterior —un `div` con `role="dialog"`— tenía que imitar y no
+ * imitaba del todo: retiene el tabulador dentro, cierra con Escape desde
+ * cualquier punto y devuelve el foco a donde estaba al terminar.
  */
 export function useConfirm() {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
 
   const confirm = useCallback(
     (request: ConfirmRequest) =>
       new Promise<boolean>((resolve) => setPending({ ...request, resolve })),
     [],
   );
+
+  useEffect(() => {
+    const element = dialogRef.current;
+    if (!element) return;
+    if (pending && !element.open) element.showModal();
+    if (!pending && element.open) element.close();
+  }, [pending]);
 
   // Se recrea en cada render junto con el diálogo, así que no necesita ser
   // estable y puede leer `pending` directamente.
@@ -38,51 +52,44 @@ export function useConfirm() {
     setPending(null);
   };
 
-  const dialog = pending ? (
-    <div
-      role="dialog"
-      aria-modal="true"
+  const dialog = (
+    <dialog
+      ref={dialogRef}
       aria-labelledby="confirm-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      // Escape dispara `cancel`; se trata como una negativa, igual que pulsar
+      // «Cancelar», para que la promesa nunca se quede sin resolver.
+      onCancel={(event) => {
+        event.preventDefault();
+        settle(false);
+      }}
       onClick={(event) => {
         if (event.target === event.currentTarget) settle(false);
       }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") settle(false);
-      }}
+      className="m-auto w-[min(100%-2rem,28rem)] rounded-card border border-line bg-overlay p-0 text-body shadow-lg backdrop:bg-[var(--scrim)]"
     >
-      <div className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <h2 id="confirm-title" className="font-heading text-lg font-semibold text-emerald-950">
-          {pending.title}
-        </h2>
-        <p className="mt-2 text-sm text-slate-700">{pending.message}</p>
-        {pending.warning ? (
-          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {pending.warning}
-          </p>
-        ) : null}
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => settle(false)}
-            className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            autoFocus
-            onClick={() => settle(true)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${
-              pending.danger ? "bg-red-700 hover:bg-red-800" : "bg-emerald-700 hover:bg-emerald-800"
-            }`}
-          >
-            {pending.confirmLabel ?? "Confirmar"}
-          </button>
+      {pending ? (
+        <div className="grid gap-3 p-5">
+          <h2 id="confirm-title" className="font-display text-lg font-bold text-ink">
+            {pending.title}
+          </h2>
+          <p className="text-sm text-body">{pending.message}</p>
+          {pending.warning ? <Alert tone="warning">{pending.warning}</Alert> : null}
+          <div className="mt-2 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => settle(false)}>
+              Cancelar
+            </Button>
+            <Button
+              autoFocus
+              variant={pending.danger ? "danger" : "primary"}
+              onClick={() => settle(true)}
+            >
+              {pending.confirmLabel ?? "Confirmar"}
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
-  ) : null;
+      ) : null}
+    </dialog>
+  );
 
   return { confirm, dialog };
 }

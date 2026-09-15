@@ -15,37 +15,17 @@ import {
   removeCommunityReaction,
   revokeCommunityConsent,
 } from "@/lib/api-client";
+import {
+  categoryLabels,
+  categoryOrder,
+  readableDate,
+  statusLabels,
+  statusOrder,
+  statusTones,
+} from "@/lib/labels";
+import { Alert, Badge, Button, EmptyState, Skeleton, buttonClasses } from "@/components/ui";
 
 type FeedTab = "MINE" | "COMMUNITY";
-
-export const categoryLabels: Record<IncidentCategory, string> = {
-  INFRASTRUCTURE: "Infraestructura",
-  SECURITY: "Seguridad",
-  CLEANING: "Limpieza",
-};
-
-export const statusLabels: Record<IncidentStatus, string> = {
-  REPORTED: "Reportado",
-  IN_REVIEW: "En revisión",
-  IN_PROGRESS: "En atención",
-  RESOLVED: "Resuelto",
-  REJECTED: "No publicado",
-};
-
-export function readableDate(value: string): string {
-  return new Intl.DateTimeFormat("es-PE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-export function statusClass(status: IncidentStatus): string {
-  if (status === "RESOLVED") return "bg-emerald-100 text-emerald-800";
-  if (status === "IN_PROGRESS") return "bg-sky-100 text-sky-800";
-  if (status === "REJECTED") return "bg-slate-200 text-slate-700";
-  if (status === "IN_REVIEW") return "bg-amber-100 text-amber-800";
-  return "bg-violet-100 text-violet-800";
-}
 
 type SecureFeedImageProps = {
   incidentId: string;
@@ -120,13 +100,15 @@ function IncidentCard({
             {isMine ? "Yo" : "CA"}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-slate-900">
+            <p className="truncate text-sm font-bold text-ink">
               {isMine ? "Mi reporte" : "Comunidad Campus"}
             </p>
-            <p className="text-xs text-slate-500">{readableDate(item.created_at)}</p>
+            <p className="text-xs text-muted">{readableDate(item.created_at)}</p>
           </div>
         </div>
-        <span className={`feed-status ${statusClass(item.status)}`}>{statusLabels[item.status]}</span>
+        <Badge tone={statusTones[item.status]} dot>
+          {statusLabels[item.status]}
+        </Badge>
       </div>
 
       <p className="feed-description">{item.description}</p>
@@ -141,7 +123,7 @@ function IncidentCard({
       ) : null}
 
       <div className="feed-meta">
-        <span className="feed-chip">{categoryLabels[item.category]}</span>
+        <Badge tone="neutral">{categoryLabels[item.category]}</Badge>
         <span className="feed-zone">{item.location_zone_name ?? "Zona no definida"}</span>
       </div>
 
@@ -170,7 +152,7 @@ function IncidentCard({
       ) : (
         <div className="feed-reaction-bar">
           {community.is_own_report ? (
-            <span className="text-xs font-semibold text-emerald-700">Tu reporte compartido</span>
+            <span className="text-xs font-semibold text-[var(--tone-success-fg)]">Tu reporte compartido</span>
           ) : (
             <button
               type="button"
@@ -182,7 +164,7 @@ function IncidentCard({
               {community.reacted_by_me ? "✓ Apoyado" : "♡ Apoyar"}
             </button>
           )}
-          <span className="text-xs font-semibold text-slate-500">
+          <span className="text-xs font-semibold text-muted">
             {community.reaction_count} {community.reaction_count === 1 ? "apoyo" : "apoyos"}
           </span>
         </div>
@@ -297,8 +279,12 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
           <p>Consulta tus reportes o las incidencias compartidas por la comunidad.</p>
         </div>
         <div className="student-feed-actions">
-          <Link href="/" className="student-report-cta">+ Crear reporte</Link>
-          <button type="button" className="student-logout" onClick={onLogout}>Cerrar sesión</button>
+          <Link href="/" className={buttonClasses("primary", "sm")}>
+            Crear reporte
+          </Link>
+          <Button variant="secondary" size="sm" onClick={onLogout}>
+            Cerrar sesión
+          </Button>
         </div>
       </header>
 
@@ -312,62 +298,117 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
       </nav>
 
       <section className="student-feed-toolbar" aria-label="Filtros">
-        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as IncidentCategory | "")}>
+        <select
+          aria-label="Filtrar por categoría"
+          value={categoryFilter}
+          onChange={(event) => setCategoryFilter(event.target.value as IncidentCategory | "")}
+        >
           <option value="">Todas las categorías</option>
-          <option value="INFRASTRUCTURE">Infraestructura</option>
-          <option value="SECURITY">Seguridad</option>
-          <option value="CLEANING">Limpieza</option>
+          {categoryOrder.map((value) => (
+            <option key={value} value={value}>
+              {categoryLabels[value]}
+            </option>
+          ))}
         </select>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as IncidentStatus | "")}>
+        <select
+          aria-label="Filtrar por estado"
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as IncidentStatus | "")}
+        >
           <option value="">Todos los estados</option>
-          <option value="REPORTED">Reportado</option>
-          <option value="IN_REVIEW">En revisión</option>
-          <option value="IN_PROGRESS">En atención</option>
-          <option value="RESOLVED">Resuelto</option>
-          <option value="REJECTED">No publicado</option>
+          {statusOrder.map((value) => (
+            <option key={value} value={value}>
+              {statusLabels[value]}
+            </option>
+          ))}
         </select>
-        <button type="button" onClick={() => void loadFeed(true)} disabled={loading}>Actualizar</button>
+        <Button variant="secondary" size="sm" onClick={() => void loadFeed(true)} loading={loading}>
+          Actualizar
+        </Button>
       </section>
 
-      {error ? <p className="student-feed-error" role="alert">{error}</p> : null}
-      {loading ? <p className="student-feed-loading">Actualizando incidencias…</p> : null}
+      {error ? <Alert tone="danger" className="mb-3">{error}</Alert> : null}
 
       <section className="student-feed-list" aria-live="polite">
+        {/* El esqueleto ocupa el sitio de las tarjetas que van a llegar, para
+            que la lista no dé un salto cuando lleguen. */}
+        {loading ? <FeedSkeleton /> : null}
         {!loading && activeItems.length === 0 ? (
-          <div className="student-feed-empty">
-            <p className="text-lg font-bold text-slate-800">
-              {tab === "MINE" ? "Aún no tienes reportes." : "Aún no hay reportes compartidos."}
-            </p>
-            <p>{tab === "MINE" ? "Crea un reporte para hacer seguimiento desde aquí." : "Vuelve pronto para ver incidencias validadas por la comunidad."}</p>
-          </div>
-        ) : null}
-        {activeItems.map((item) => (
-          <IncidentCard
-            key={`${tab}-${item.id}`}
-            item={item}
-            tab={tab}
-            onOpenImage={setLightboxUrl}
-            onReact={handleReaction}
-            reactingId={reactingId}
-            onRevoke={handleRevoke}
-            revokingId={revokingId}
+          <EmptyState
+            title={tab === "MINE" ? "Aún no tienes reportes" : "Aún no hay reportes compartidos"}
+            description={
+              tab === "MINE"
+                ? "Crea un reporte y podrás seguir su avance desde aquí."
+                : "Vuelve pronto para ver incidencias validadas por la comunidad."
+            }
+            action={
+              tab === "MINE" ? (
+                <Link href="/" className={buttonClasses("primary", "sm")}>
+                  Crear mi primer reporte
+                </Link>
+              ) : null
+            }
           />
-        ))}
+        ) : null}
+        {!loading
+          ? activeItems.map((item) => (
+              <IncidentCard
+                key={`${tab}-${item.id}`}
+                item={item}
+                tab={tab}
+                onOpenImage={setLightboxUrl}
+                onReact={handleReaction}
+                reactingId={reactingId}
+                onRevoke={handleRevoke}
+                revokingId={revokingId}
+              />
+            ))
+          : null}
       </section>
 
       {canLoadMore ? (
-        <button type="button" className="student-load-more" onClick={() => void loadFeed(false)} disabled={loadingMore}>
-          {loadingMore ? "Cargando…" : "Cargar más"}
-        </button>
+        <div className="mt-4 grid justify-items-center">
+          <Button variant="secondary" onClick={() => void loadFeed(false)} loading={loadingMore}>
+            Cargar más
+          </Button>
+        </div>
       ) : null}
 
       {lightboxUrl ? (
         <div className="feed-lightbox" role="dialog" aria-modal="true" aria-label="Vista ampliada de evidencia">
-          <button type="button" className="feed-lightbox-close" onClick={() => setLightboxUrl(null)}>Cerrar</button>
+          <Button
+            variant="secondary"
+            className="feed-lightbox-close"
+            onClick={() => setLightboxUrl(null)}
+          >
+            Cerrar
+          </Button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={lightboxUrl} alt="Evidencia ampliada" />
         </div>
       ) : null}
     </main>
+  );
+}
+
+/** Tres tarjetas fantasma con la forma real de una publicación del muro. */
+function FeedSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((index) => (
+        <article key={index} className="feed-card p-4">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-10 rounded-full" />
+            <div className="grid flex-1 gap-1.5">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-2.5 w-24" />
+            </div>
+          </div>
+          <Skeleton className="mt-4 h-3 w-full" />
+          <Skeleton className="mt-2 h-3 w-3/4" />
+          <Skeleton className="mt-4 h-40 w-full" />
+        </article>
+      ))}
+    </>
   );
 }

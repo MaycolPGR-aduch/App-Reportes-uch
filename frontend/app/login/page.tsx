@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/auth-card";
+import { Field, Input } from "@/components/ui";
 import { PasswordInput } from "@/components/password-input";
 import { login } from "@/lib/api-client";
 import { rutaDeRetornoSegura } from "@/lib/next-url";
@@ -32,7 +33,7 @@ function LoginForm() {
       else if (response.role === "ADMIN") router.push("/dashboard/admin");
       else router.push("/dashboard");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo iniciar sesion");
+      setError(e instanceof Error ? e.message : "No se pudo iniciar sesión");
       setLoading(false);
     }
   };
@@ -42,8 +43,8 @@ function LoginForm() {
   return (
     <AuthCard
       kicker="Acceso Campus"
-      title="Inicia sesion"
-      subtitle="Ingresa con tu codigo campus para reportar y gestionar incidencias."
+      title="Inicia sesión"
+      subtitle="Ingresa con tu código campus para reportar y gestionar incidencias."
       error={error}
       loading={loading}
       submitLabel="Entrar"
@@ -51,37 +52,41 @@ function LoginForm() {
       onSubmit={handleSubmit}
       footer={
         <>
-          <Link className="font-semibold text-emerald-800 hover:underline" href={`/register${consulta}`}>
+          <Link className="font-semibold text-brand-text hover:underline" href={`/register${consulta}`}>
             Crear cuenta
           </Link>
-          <Link className="font-semibold text-emerald-800 hover:underline" href="/forgot-password">
-            Olvide mi contrasena
+          <Link className="font-semibold text-brand-text hover:underline" href="/forgot-password">
+            Olvidé mi contraseña
           </Link>
         </>
       }
     >
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Codigo campus
-        <input
-          className="admin-login-input"
-          value={campusId}
-          onChange={(e) => setCampusId(e.target.value)}
-          autoComplete="username"
-          required
-        />
-      </label>
+      <Field label="Código campus">
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            aria-describedby={describedBy}
+            value={campusId}
+            onChange={(e) => setCampusId(e.target.value)}
+            autoComplete="username"
+            required
+          />
+        )}
+      </Field>
 
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Contrasena
-        <PasswordInput
-          className="admin-login-input"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          minLength={8}
-          required
-        />
-      </label>
+      <Field label="Contraseña">
+        {({ id, describedBy }) => (
+          <PasswordInput
+            id={id}
+            aria-describedby={describedBy}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            minLength={8}
+            required
+          />
+        )}
+      </Field>
     </AuthCard>
   );
 }

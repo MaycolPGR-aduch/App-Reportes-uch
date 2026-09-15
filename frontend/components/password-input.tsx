@@ -1,10 +1,10 @@
 "use client";
 
 import { InputHTMLAttributes, useId, useState } from "react";
+import { Input } from "@/components/ui";
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
-  /** Clases del input. El botón se posiciona sobre él sin alterar el diseño. */
-  className?: string;
+  invalid?: boolean;
 };
 
 /**
@@ -14,23 +14,21 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
  * explícito envía el formulario al pulsarlo, que aquí sería justo lo contrario
  * de lo que espera quien solo quiere comprobar lo que escribió.
  */
-export function PasswordInput({ className = "", ...props }: Props) {
+export function PasswordInput({ className, invalid, ...props }: Props) {
   const [visible, setVisible] = useState(false);
   const descripcionId = useId();
+  // Se conserva la descripción que venga de fuera (la ayuda o el error del
+  // campo) y se añade la propia: sustituirla dejaría mudo uno de los dos.
+  const descripciones = [props["aria-describedby"], descripcionId].filter(Boolean).join(" ");
 
   return (
     <span className="relative block">
-      <input
+      <Input
         {...props}
         type={visible ? "text" : "password"}
-        // `w-full`: antes el input era hijo directo de un contenedor grid y se
-        // estiraba solo; dentro del envoltorio encoge a su anchura intrínseca y
-        // el botón quedaría fuera del recuadro.
-        // El relleno derecho va en línea porque las clases del proyecto usan la
-        // forma abreviada `padding`, que ganaría a una utilidad `pr-*`.
-        className={`${className} w-full`}
-        style={{ paddingRight: "2.5rem", ...(props.style ?? {}) }}
-        aria-describedby={descripcionId}
+        invalid={invalid}
+        className={`pr-10 ${className ?? ""}`}
+        aria-describedby={descripciones}
       />
       <button
         type="button"
@@ -39,7 +37,7 @@ export function PasswordInput({ className = "", ...props }: Props) {
         aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
         aria-pressed={visible}
         title={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
-        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-500 hover:text-emerald-800"
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-subtle transition-colors hover:text-brand-text"
       >
         {visible ? (
           // Ojo tachado: la contraseña está a la vista y pulsar la oculta.

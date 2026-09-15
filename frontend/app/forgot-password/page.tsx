@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { AuthCard } from "@/components/auth-card";
 import { requestPasswordReset } from "@/lib/api-client";
+import { Field, Input } from "@/components/ui";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -19,10 +20,10 @@ export default function ForgotPasswordPage() {
     try {
       await requestPasswordReset(email.trim());
       // El servidor responde lo mismo exista o no la cuenta, para no revelar
-      // que correos estan registrados. El aviso de aqui respeta esa reserva.
+      // qué correos están registrados. El aviso de aquí respeta esa reserva.
       setNotice(
-        "Si el correo esta registrado, recibiras un enlace para restablecer tu " +
-          "contrasena. Revisa tambien la carpeta de no deseados.",
+        "Si el correo está registrado, recibirás un enlace para restablecer tu " +
+          "contraseña. Revisa también la carpeta de no deseados.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo procesar la solicitud");
@@ -34,7 +35,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthCard
       kicker="Acceso Campus"
-      title="Recupera tu contrasena"
+      title="Recupera tu contraseña"
       subtitle="Escribe tu correo institucional y te enviaremos un enlace para cambiarla."
       error={error}
       notice={notice}
@@ -45,26 +46,26 @@ export default function ForgotPasswordPage() {
       onSubmit={handleSubmit}
       footer={
         <>
-          <Link className="font-semibold text-emerald-800 hover:underline" href="/login">
-            Volver al inicio de sesion
+          <Link className="font-semibold text-brand-text hover:underline" href="/login">
+            Volver al inicio de sesión
           </Link>
-          <span className="text-slate-500">
-            Si no llega, escribe al administrador del campus.
-          </span>
+          <span className="text-subtle">Si no llega, escribe al administrador del campus.</span>
         </>
       }
     >
-      <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-        Correo institucional
-        <input
-          className="admin-login-input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type="email"
-          autoComplete="email"
-          required
-        />
-      </label>
+      <Field label="Correo institucional">
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            aria-describedby={describedBy}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            required
+          />
+        )}
+      </Field>
     </AuthCard>
   );
 }

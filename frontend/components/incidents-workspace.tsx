@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   IncidentCategory,
   IncidentDetail,
@@ -11,12 +11,48 @@ import {
   getIncidentDetail,
   listIncidents,
 } from "@/lib/api-client";
+import {
+  categoryLabels,
+  categoryOrder,
+  labelOf,
+  locationStatusLabels,
+  locationStatusTones,
+  priorityLabels,
+  priorityOrder,
+  priorityTones,
+  readableDate,
+  relativeTime,
+  statusLabels,
+  statusOrder,
+  statusTones,
+  toneOf,
+} from "@/lib/labels";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Field,
+  Input,
+  Select,
+  Skeleton,
+  StatCard,
+  cx,
+} from "@/components/ui";
 
-type IncidentsWorkspaceProps = {
-  token: string;
-};
+const PAGE_SIZE = 50;
 
-export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
+/**
+ * Explorador de incidencias: filtros, listado y detalle.
+ *
+ * Recibía una prop `token` que no era un token —siempre valía la cadena
+ * "cookie-session"— y sólo servía para decidir si lanzar la petición. La
+ * sesión viaja en la cookie, así que el componente ya no finge tenerla.
+ */
+export function IncidentsWorkspace() {
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "">("");
   const [categoryFilter, setCategoryFilter] = useState<IncidentCategory | "">("");
   const [priorityFilter, setPriorityFilter] = useState<PriorityLevel | "">("");
@@ -26,17 +62,16 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
   const [items, setItems] = useState<IncidentListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<IncidentDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<IncidentDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
   const [evidenceLoadingId, setEvidenceLoadingId] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [evidenceUrl, setEvidenceUrl] = useState<string | null>(null);
-  const [evidenceTitle, setEvidenceTitle] = useState<string | null>(null);
 
-  const fetchList = async () => {
-    if (!token) return;
+  const fetchList = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -46,406 +81,482 @@ export function IncidentsWorkspace({ token }: IncidentsWorkspaceProps) {
         priority: priorityFilter || undefined,
         date_from: dateFrom ? `${dateFrom}T00:00:00` : undefined,
         date_to: dateTo ? `${dateTo}T23:59:59` : undefined,
-        limit: 50,
+        limit: PAGE_SIZE,
         offset: 0,
       });
       setItems(response.items);
       setTotal(response.total);
-      if (response.items.length === 0) {
-        setSelectedId(null);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo cargar incidencias");
+      if (response.items.length === 0) setSelectedId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudieron cargar las incidencias");
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    if (!token) return;
-    fetchList();
+    // Los filtros se aplican al enviar el formulario, no en cada cambio.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    const fetchDetail = async () => {
-      if (!token || !selectedId) {
-        setSelectedDetail(null);
-        return;
-      }
-      setDetailLoading(true);
-      try {
-        const detail = await getIncidentDetail(selectedId);
-        setSelectedDetail(detail);
-      } catch {
-        setSelectedDetail(null);
-      } finally {
-        setDetailLoading(false);
-      }
+    void fetchList();
+  }, [fetchList]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let current = true;
+    setDetailLoading(true);
+    getIncidentDetail(selectedId)
+      .then((data) => current && setDetail(data))
+      .catch(() => current && setDetail(null))
+      .finally(() => current && setDetailLoading(false));
+    return () => {
+      current = false;
     };
-    fetchDetail();
-  }, [selectedId, token]);
+  }, [selectedId]);
 
   useEffect(() => {
     return () => {
-      if (evidenceUrl) {
-        URL.revokeObjectURL(evidenceUrl);
-      }
+      if (evidenceUrl) URL.revokeObjectURL(evidenceUrl);
     };
   }, [evidenceUrl]);
 
   const openEvidence = async (incidentId: string, evidenceId: string) => {
-    if (!token) return;
     setEvidenceError(null);
     setEvidenceLoadingId(evidenceId);
     try {
       const url = await getEvidenceObjectUrl(incidentId, evidenceId);
-      if (evidenceUrl) {
-        URL.revokeObjectURL(evidenceUrl);
-      }
+      if (evidenceUrl) URL.revokeObjectURL(evidenceUrl);
       setEvidenceUrl(url);
-      setEvidenceTitle(`Evidencia ${evidenceId.slice(0, 8)}`);
-    } catch (e) {
-      setEvidenceError(e instanceof Error ? e.message : "No se pudo cargar evidencia");
+    } catch (cause) {
+      setEvidenceError(cause instanceof Error ? cause.message : "No se pudo cargar la evidencia");
     } finally {
       setEvidenceLoadingId(null);
     }
   };
 
   const closeEvidence = () => {
-    if (evidenceUrl) {
-      URL.revokeObjectURL(evidenceUrl);
-    }
+    if (evidenceUrl) URL.revokeObjectURL(evidenceUrl);
     setEvidenceUrl(null);
-    setEvidenceTitle(null);
   };
 
   const priorityCount = useMemo(() => {
-    const result: Record<PriorityLevel, number> = {
-      LOW: 0,
-      MEDIUM: 0,
-      HIGH: 0,
-      CRITICAL: 0,
-    };
-    for (const item of items) {
-      result[item.priority] += 1;
-    }
+    const result: Record<PriorityLevel, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
+    for (const item of items) result[item.priority] += 1;
     return result;
   }, [items]);
 
+  const unassigned = items.filter((item) => item.assignment_count === 0).length;
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <form
+          className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void fetchList();
+          }}
+        >
+          <Field label="Estado">
+            {({ id }) => (
+              <Select
+                id={id}
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as IncidentStatus | "")}
+              >
+                <option value="">Todos</option>
+                {statusOrder.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabels[status]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Categoría">
+            {({ id }) => (
+              <Select
+                id={id}
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value as IncidentCategory | "")}
+              >
+                <option value="">Todas</option>
+                {categoryOrder.map((category) => (
+                  <option key={category} value={category}>
+                    {categoryLabels[category]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Prioridad">
+            {({ id }) => (
+              <Select
+                id={id}
+                value={priorityFilter}
+                onChange={(event) => setPriorityFilter(event.target.value as PriorityLevel | "")}
+              >
+                <option value="">Todas</option>
+                {priorityOrder
+                  .slice()
+                  .reverse()
+                  .map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priorityLabels[priority]}
+                    </option>
+                  ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Desde">
+            {({ id }) => (
+              <Input
+                id={id}
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+              />
+            )}
+          </Field>
+          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+            <Field label="Hasta">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
+                />
+              )}
+            </Field>
+            <Button type="submit" loading={loading}>
+              Filtrar
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Coinciden" value={total} loading={loading} />
+        <StatCard label="Críticas" value={priorityCount.CRITICAL} tone="danger" loading={loading} />
+        <StatCard label="Altas" value={priorityCount.HIGH} tone="warning" loading={loading} />
+        <StatCard
+          label="Sin asignar"
+          value={unassigned}
+          tone={unassigned > 0 ? "warning" : "success"}
+          loading={loading}
+        />
+      </section>
+
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_1fr]">
+        <Card>
+          <CardHeader
+            title={`Listado (${items.length})`}
+            description={
+              total > items.length
+                ? `Se muestran las ${PAGE_SIZE} más recientes de ${total}.`
+                : undefined
+            }
+          />
+          <CardBody className="p-0">
+            {loading ? (
+              <div className="grid gap-2 p-4">
+                <Skeleton className="h-20 rounded-lg" />
+                <Skeleton className="h-20 rounded-lg" />
+                <Skeleton className="h-20 rounded-lg" />
+              </div>
+            ) : items.length === 0 ? (
+              <EmptyState
+                className="m-4 border-0"
+                title="Sin incidencias para estos filtros"
+                description="Prueba a ampliar el rango de fechas o quitar algún filtro."
+              />
+            ) : (
+              <ul className="max-h-[34rem] overflow-y-auto">
+                {items.map((item) => {
+                  const selected = selectedId === item.id;
+                  return (
+                    <li key={item.id}>
+                      {/* Cada fila es un botón real: entra en el tabulador y
+                          anuncia si está seleccionada. Antes el color de fondo
+                          por prioridad era la única señal, y encima competía
+                          con el del propio estado seleccionado. */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(item.id)}
+                        aria-current={selected ? "true" : undefined}
+                        className={cx(
+                          "grid w-full gap-1.5 border-b border-line-subtle px-4 py-3 text-left transition-colors",
+                          selected ? "bg-brand-soft" : "hover:bg-sunken",
+                        )}
+                      >
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={priorityTones[item.priority]} dot>
+                            {priorityLabels[item.priority]}
+                          </Badge>
+                          <Badge tone="neutral">{categoryLabels[item.category]}</Badge>
+                          <Badge tone={statusTones[item.status]}>{statusLabels[item.status]}</Badge>
+                          <span
+                            className="ml-auto text-xs text-subtle"
+                            title={readableDate(item.created_at)}
+                          >
+                            {relativeTime(item.created_at)}
+                          </span>
+                        </span>
+                        <span className="line-clamp-2 text-sm text-body">{item.description}</span>
+                        <span className="flex flex-wrap gap-x-3 text-xs text-muted">
+                          <span>{item.location_zone_name ?? "Zona no definida"}</span>
+                          <span>
+                            {item.assignment_count === 0
+                              ? "Sin asignar"
+                              : `Responsable: ${item.assigned_to.join(", ")}`}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Detalle"
+            description={detail ? `Incidencia ${detail.id.slice(0, 8)}` : undefined}
+          />
+          <CardBody className="grid gap-3">
+            {detailLoading ? (
+              <>
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-24" />
+                <Skeleton className="h-24" />
+              </>
+            ) : !detail ? (
+              <EmptyState
+                className="border-0"
+                title="Ninguna incidencia seleccionada"
+                description="Pulsa una fila del listado para ver su ficha completa."
+              />
+            ) : (
+              <IncidentDetailView
+                detail={detail}
+                onOpenEvidence={openEvidence}
+                evidenceLoadingId={evidenceLoadingId}
+                evidenceError={evidenceError}
+              />
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      {evidenceUrl ? <EvidenceLightbox url={evidenceUrl} onClose={closeEvidence} /> : null}
+    </div>
+  );
+}
+
+function IncidentDetailView({
+  detail,
+  onOpenEvidence,
+  evidenceLoadingId,
+  evidenceError,
+}: {
+  detail: IncidentDetail;
+  onOpenEvidence: (incidentId: string, evidenceId: string) => void;
+  evidenceLoadingId: string | null;
+  evidenceError: string | null;
+}) {
   return (
     <>
-      <section className="grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 md:grid-cols-5">
-        <select
-          className="rounded-lg border border-[var(--line)] px-2 py-2 text-sm"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as IncidentStatus | "")}
-        >
-          <option value="">Estado: todos</option>
-          <option value="REPORTED">Reportado</option>
-          <option value="IN_REVIEW">En revision</option>
-          <option value="IN_PROGRESS">En progreso</option>
-          <option value="RESOLVED">Resuelto</option>
-          <option value="REJECTED">Rechazado</option>
-        </select>
-        <select
-          className="rounded-lg border border-[var(--line)] px-2 py-2 text-sm"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value as IncidentCategory | "")}
-        >
-          <option value="">Categoria: todas</option>
-          <option value="INFRASTRUCTURE">Infraestructura</option>
-          <option value="SECURITY">Seguridad</option>
-          <option value="CLEANING">Limpieza</option>
-        </select>
-        <select
-          className="rounded-lg border border-[var(--line)] px-2 py-2 text-sm"
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value as PriorityLevel | "")}
-        >
-          <option value="">Prioridad: todas</option>
-          <option value="LOW">Baja</option>
-          <option value="MEDIUM">Media</option>
-          <option value="HIGH">Alta</option>
-          <option value="CRITICAL">Critica</option>
-        </select>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="rounded-lg border border-[var(--line)] px-2 py-2 text-sm"
-        />
-        <div className="flex gap-2">
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-full rounded-lg border border-[var(--line)] px-2 py-2 text-sm"
-          />
-          <button
-            onClick={fetchList}
-            className="rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
-          >
-            Filtrar
-          </button>
-        </div>
-      </section>
+      <div className="flex flex-wrap gap-1.5">
+        <Badge tone={priorityTones[detail.priority]} dot size="md">
+          {priorityLabels[detail.priority]}
+        </Badge>
+        <Badge tone="neutral" size="md">
+          {categoryLabels[detail.category]}
+        </Badge>
+        <Badge tone={statusTones[detail.status]} size="md">
+          {statusLabels[detail.status]}
+        </Badge>
+      </div>
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <StatBox label="Total" value={String(total)} />
-        <StatBox label="Criticas" value={String(priorityCount.CRITICAL)} />
-        <StatBox label="Altas" value={String(priorityCount.HIGH)} />
-        <StatBox label="Medias+Bajas" value={String(priorityCount.MEDIUM + priorityCount.LOW)} />
-      </section>
+      <p className="text-sm text-body">{detail.description}</p>
 
-      <section className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
-          <div className="border-b border-[var(--line)] px-4 py-3 text-sm font-semibold text-slate-700">
-            Incidencias ({items.length})
-          </div>
-          {loading ? <p className="p-4 text-sm text-slate-500">Cargando...</p> : null}
-          {error ? <p className="p-4 text-sm text-red-600">{error}</p> : null}
-          <ul className="max-h-[520px] overflow-y-auto">
-            {items.map((item) => {
-              const priorityBg =
-                item.priority === "CRITICAL"
-                  ? "bg-red-50"
-                  : item.priority === "HIGH"
-                    ? "bg-orange-50"
-                    : "bg-yellow-50";
-              return (
-                <li key={item.id}>
-                  <button
-                    onClick={() => setSelectedId(item.id)}
-                    className={`grid w-full gap-1 border-b border-[var(--line)] px-4 py-3 text-left hover:bg-emerald-50 ${
-                      selectedId === item.id ? "bg-emerald-100" : priorityBg
-                    }`}
-                  >
-                    <span className="text-xs font-medium text-slate-500">
-                      {new Date(item.created_at).toLocaleString()}
-                    </span>
-                    <span className="text-sm font-semibold text-slate-900">
-                      [{item.priority}] {item.category}
-                    </span>
-                    <span className="line-clamp-2 text-sm text-slate-700">{item.description}</span>
-                    <span className="text-xs text-slate-500">
-                      Reportante: {item.reporter_campus_id}
-                    </span>
-                    <span className="text-xs text-emerald-700">
-                      Zona: {item.location_zone_name ?? "No definida"} ({item.location_status ?? "N/A"})
-                    </span>
-                    <span
-                      className={`text-xs ${
-                        item.assignment_count === 0 ? "text-slate-400" : "text-slate-600"
-                      }`}
-                    >
-                      {item.assignment_count === 0
-                        ? "Sin asignar"
-                        : `Responsable: ${item.assigned_to.join(", ")}`}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-            {!loading && items.length === 0 ? (
-              <li className="px-4 py-6 text-sm text-slate-500">Sin incidencias para los filtros.</li>
-            ) : null}
-          </ul>
-        </div>
+      <dl className="grid gap-2 rounded-lg border border-line bg-sunken p-3 text-xs">
+        <Dato label="Identificador">
+          <span className="font-mono">{detail.id}</span>
+        </Dato>
+        <Dato label="Reportante">{detail.reporter_name}</Dato>
+        <Dato label="Creada">{readableDate(detail.created_at)}</Dato>
+        {detail.location ? (
+          <>
+            <Dato label="Coordenadas">
+              <span className="font-mono">
+                {detail.location.latitude.toFixed(6)}, {detail.location.longitude.toFixed(6)}
+              </span>
+            </Dato>
+            <Dato label="Zona">
+              <span className="flex flex-wrap items-center justify-end gap-1.5">
+                {detail.location.resolved_zone_name ?? "No definida"}
+                <Badge tone={toneOf(locationStatusTones, detail.location.location_status)}>
+                  {labelOf(locationStatusLabels, detail.location.location_status)}
+                </Badge>
+              </span>
+            </Dato>
+          </>
+        ) : null}
+      </dl>
 
-        <div className="rounded-2xl border border-[var(--line)] bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">Detalle</h2>
-          {detailLoading ? <p className="text-sm text-slate-500">Cargando detalle...</p> : null}
-          {!detailLoading && !selectedDetail ? (
-            <p className="text-sm text-slate-500">Selecciona una incidencia del listado.</p>
-          ) : null}
-          {selectedDetail ? (
-            <div className="grid gap-3 text-sm">
-              <DetailRow label="ID" value={selectedDetail.id} mono />
-              <DetailRow label="Estado" value={selectedDetail.status} />
-              <DetailRow label="Categoria" value={selectedDetail.category} />
-              <DetailRow label="Prioridad" value={selectedDetail.priority} />
-              <DetailRow label="Reportante" value={selectedDetail.reporter_name} />
-              <DetailRow label="Descripcion" value={selectedDetail.description} />
-              {selectedDetail.location ? (
-                <DetailRow
-                  label="GPS"
-                  value={`${selectedDetail.location.latitude.toFixed(6)}, ${selectedDetail.location.longitude.toFixed(6)}`}
-                  mono
-                />
-              ) : null}
-              {selectedDetail.location ? (
-                <DetailRow
-                  label="Zona detectada"
-                  value={`${selectedDetail.location.resolved_zone_name ?? "No definida"} (${selectedDetail.location.location_status})`}
-                />
-              ) : null}
-              <div className="grid gap-2 rounded-lg border border-[var(--line)] p-2.5">
-                <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
-                  Responsable asignado
-                </span>
-                {selectedDetail.assignments.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    Sin asignar. Usa la pestaña Asignaciones para encomendarla.
-                  </p>
-                ) : (
-                  selectedDetail.assignments.map((assignment) => {
-                    const overdue =
-                      assignment.due_at !== null &&
-                      assignment.completed_at === null &&
-                      new Date(assignment.due_at) < new Date();
-                    return (
-                      <div
-                        key={assignment.id}
-                        className="grid gap-0.5 border-t border-[var(--line)] pt-2 first:border-t-0 first:pt-0"
-                      >
-                        <p className="text-xs font-semibold text-slate-800">
-                          {assignment.responsible_name}{" "}
-                          <span className="font-normal text-slate-500">
-                            · {assignment.responsible_area}
-                          </span>
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          {assignment.responsible_email}
-                          {assignment.responsible_phone ? ` · ${assignment.responsible_phone}` : ""}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          Asignación: <strong>{assignment.status}</strong> ·{" "}
-                          {new Date(assignment.assigned_at).toLocaleString()}
-                        </p>
-                        {assignment.completed_at ? (
-                          <p className="text-xs text-emerald-700">
-                            Atendida el {new Date(assignment.completed_at).toLocaleString()}
-                          </p>
-                        ) : assignment.due_at ? (
-                          <p className={`text-xs ${overdue ? "text-red-700" : "text-slate-600"}`}>
-                            Plazo: {new Date(assignment.due_at).toLocaleString()}
-                            {overdue ? " · vencido" : ""}
-                          </p>
-                        ) : null}
-                        {assignment.notes ? (
-                          <p className="text-xs italic text-slate-500">{assignment.notes}</p>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              <DetailRow label="Evidencias" value={String(selectedDetail.evidences.length)} />
-              {selectedDetail.evidences.length > 0 ? (
-                <div className="grid gap-2 rounded-lg border border-[var(--line)] p-2.5">
-                  <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
-                    Ver evidencia
-                  </span>
-                  {selectedDetail.evidences.map((evidence) => (
-                    <button
-                      key={evidence.id}
-                      onClick={() => openEvidence(selectedDetail.id, evidence.id)}
-                      className="rounded-lg border border-[var(--line)] px-3 py-2 text-left text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
-                    >
-                      {evidenceLoadingId === evidence.id
-                        ? "Cargando imagen..."
-                        : `Ver imagen ${evidence.id.slice(0, 8)}`}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <DetailRow label="Metricas IA" value={String(selectedDetail.ai_metrics.length)} />
-              {selectedDetail.ai_metrics.length > 0 ? (
-                <div className="grid gap-2 rounded-lg border border-[var(--line)] p-2.5">
-                  <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
-                    Ultimas metricas IA
-                  </span>
-                  {selectedDetail.ai_metrics.slice(0, 3).map((metric) => {
-                    const source =
-                      metric.raw_response && typeof metric.raw_response.source === "string"
-                        ? metric.raw_response.source
-                        : "unknown";
-                    const fallbackReason =
-                      metric.raw_response &&
-                      typeof metric.raw_response.fallback_reason === "string"
-                        ? metric.raw_response.fallback_reason
-                        : null;
-                    return (
-                      <div
-                        key={metric.id}
-                        className="grid gap-1 rounded-lg border border-[var(--line)] bg-slate-50 p-2"
-                      >
-                        <p className="text-xs text-slate-500">
-                          {new Date(metric.created_at).toLocaleString()} | {metric.model_name}
-                        </p>
-                        <p className="text-xs font-semibold text-slate-800">
-                          Categoria IA: {metric.predicted_category} | Prioridad:{" "}
-                          {metric.priority_label} ({metric.priority_score}) | Confianza:{" "}
-                          {metric.confidence}
-                        </p>
-                        <p className="text-xs text-slate-700">
-                          Motivo IA: {metric.reasoning_summary || "Sin resumen"}
-                        </p>
-                        <p className="text-xs text-slate-600">Fuente: {source}</p>
-                        {fallbackReason ? (
-                          <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                            Fallback: {fallbackReason}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-              <DetailRow
-                label="Notificaciones"
-                value={String(selectedDetail.notifications.length)}
-              />
-              {evidenceError ? (
-                <p className="rounded-lg bg-red-50 px-2 py-1 text-xs text-red-700">
-                  {evidenceError}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {evidenceUrl ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-2xl bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-800">{evidenceTitle ?? "Evidencia"}</h3>
-              <button
-                onClick={closeEvidence}
-                className="rounded-lg border border-[var(--line)] px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+      <Bloque titulo={`Responsables (${detail.assignments.length})`}>
+        {detail.assignments.length === 0 ? (
+          <p className="text-xs text-muted">
+            Sin asignar. Usa la sección Asignaciones para encomendarla.
+          </p>
+        ) : (
+          detail.assignments.map((assignment) => {
+            const overdue =
+              assignment.due_at !== null &&
+              assignment.completed_at === null &&
+              new Date(assignment.due_at) < new Date();
+            return (
+              <div
+                key={assignment.id}
+                className="grid gap-0.5 border-t border-line-subtle pt-2 text-xs first:border-t-0 first:pt-0"
               >
-                Cerrar
-              </button>
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={evidenceUrl}
-              alt={evidenceTitle ?? "Evidencia"}
-              className="w-full rounded-xl"
-            />
+                <p className="font-medium text-ink">
+                  {assignment.responsible_name}
+                  <span className="font-normal text-muted"> · {assignment.responsible_area}</span>
+                </p>
+                <p className="text-muted">
+                  {assignment.responsible_email}
+                  {assignment.responsible_phone ? ` · ${assignment.responsible_phone}` : ""}
+                </p>
+                {assignment.completed_at ? (
+                  <p className="text-[var(--tone-success-fg)]">
+                    Atendida el {readableDate(assignment.completed_at)}
+                  </p>
+                ) : assignment.due_at ? (
+                  <p
+                    className={cx(
+                      overdue ? "font-medium text-[var(--tone-danger-fg)]" : "text-muted",
+                    )}
+                    title={readableDate(assignment.due_at)}
+                  >
+                    {overdue ? "Venció " : "Vence "}
+                    {relativeTime(assignment.due_at)}
+                  </p>
+                ) : null}
+                {assignment.notes ? <p className="italic text-subtle">{assignment.notes}</p> : null}
+              </div>
+            );
+          })
+        )}
+      </Bloque>
+
+      <Bloque titulo={`Evidencias (${detail.evidences.length})`}>
+        {detail.evidences.length === 0 ? (
+          <p className="text-xs text-muted">Sin evidencias adjuntas.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {detail.evidences.map((evidence) => (
+              <Button
+                key={evidence.id}
+                size="sm"
+                variant="secondary"
+                onClick={() => onOpenEvidence(detail.id, evidence.id)}
+                loading={evidenceLoadingId === evidence.id}
+              >
+                Ver imagen {evidence.id.slice(0, 8)}
+              </Button>
+            ))}
           </div>
-        </div>
+        )}
+        {evidenceError ? (
+          <Alert tone="danger" className="mt-2">
+            {evidenceError}
+          </Alert>
+        ) : null}
+      </Bloque>
+
+      {detail.ai_metrics.length > 0 ? (
+        <Bloque titulo="Análisis de la IA">
+          {detail.ai_metrics.slice(0, 3).map((metric) => {
+            const raw = metric.raw_response ?? {};
+            const source = typeof raw.source === "string" ? raw.source : "desconocida";
+            const fallback = typeof raw.fallback_reason === "string" ? raw.fallback_reason : null;
+            return (
+              <div key={metric.id} className="grid gap-1 rounded-lg border border-line p-2 text-xs">
+                <p className="text-subtle">
+                  {readableDate(metric.created_at)} ·{" "}
+                  <span className="font-mono">{metric.model_name}</span>
+                </p>
+                <p className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone="neutral">{categoryLabels[metric.predicted_category]}</Badge>
+                  <Badge tone={priorityTones[metric.priority_label]}>
+                    {priorityLabels[metric.priority_label]} ({metric.priority_score})
+                  </Badge>
+                  <span className="text-muted">Confianza {metric.confidence}</span>
+                </p>
+                <p className="text-body">{metric.reasoning_summary || "Sin resumen."}</p>
+                <p className="text-subtle">Fuente: {source}</p>
+                {fallback ? <Alert tone="warning">Respaldo usado: {fallback}</Alert> : null}
+              </div>
+            );
+          })}
+        </Bloque>
       ) : null}
     </>
   );
 }
 
-function StatBox({ label, value }: { label: string; value: string }) {
+function Dato({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-xl border border-[var(--line)] bg-white p-4">
-      <p className="text-xs uppercase tracking-[0.15em] text-slate-500">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-bold text-emerald-900">{value}</p>
-    </article>
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <dt className="text-muted">{label}</dt>
+      <dd className="text-right text-ink">{children}</dd>
+    </div>
   );
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Bloque({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1 rounded-lg border border-[var(--line)] p-2.5">
-      <span className="text-xs uppercase tracking-[0.15em] text-slate-500">{label}</span>
-      <span className={`text-sm text-slate-800 ${mono ? "font-mono" : ""}`}>{value}</span>
+    <section className="grid gap-2 rounded-lg border border-line p-3">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{titulo}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** Visor de la evidencia a tamaño completo. */
+function EvidenceLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-[var(--scrim)] p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Evidencia a tamaño completo"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <div className="grid max-h-[90vh] w-full max-w-4xl gap-3 overflow-auto rounded-card border border-line bg-overlay p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-ink">Evidencia</h3>
+          <Button size="sm" variant="secondary" autoFocus onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="Evidencia de la incidencia" className="w-full rounded-lg" />
+      </div>
     </div>
   );
 }

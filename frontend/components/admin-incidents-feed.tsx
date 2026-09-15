@@ -8,13 +8,9 @@ import {
   getAdminIncidentFeedImageObjectUrl,
   listAdminIncidentFeed,
 } from "@/lib/api-client";
-import {
-  SecureFeedImage,
-  categoryLabels,
-  readableDate,
-  statusClass,
-  statusLabels,
-} from "@/components/student-incidents-feed";
+import { SecureFeedImage } from "@/components/student-incidents-feed";
+import { categoryLabels, readableDate, statusLabels, statusTones } from "@/lib/labels";
+import { Badge } from "@/components/ui";
 
 export function AdminIncidentsFeed() {
   const [items, setItems] = useState<StudentFeedItem[]>([]);
@@ -99,7 +95,7 @@ export function AdminIncidentsFeed() {
       <div className="student-feed-list" aria-live="polite">
         {!loading && items.length === 0 ? (
           <div className="student-feed-empty">
-            <p className="text-lg font-bold text-slate-800">No hay incidencias con estos filtros.</p>
+            <p className="text-lg font-bold text-ink">No hay incidencias con estos filtros.</p>
             <p>Prueba otra categoría o estado.</p>
           </div>
         ) : null}
@@ -109,13 +105,13 @@ export function AdminIncidentsFeed() {
               <div className="flex min-w-0 items-center gap-3">
                 <div className="feed-avatar" aria-hidden="true">CA</div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-900">Reporte del campus</p>
-                  <p className="text-xs text-slate-500">{readableDate(item.created_at)}</p>
+                  <p className="truncate text-sm font-bold text-ink">Reporte del campus</p>
+                  <p className="text-xs text-muted">{readableDate(item.created_at)}</p>
                 </div>
               </div>
-              <span className={`feed-status ${statusClass(item.status)}`}>
+              <Badge tone={statusTones[item.status]} dot>
                 {statusLabels[item.status]}
-              </span>
+              </Badge>
             </div>
 
             <p className="feed-description">{item.description}</p>
@@ -128,7 +124,7 @@ export function AdminIncidentsFeed() {
               />
             ) : null}
             <div className="feed-meta">
-              <span className="feed-chip">{categoryLabels[item.category]}</span>
+              <Badge tone="neutral">{categoryLabels[item.category]}</Badge>
               <span className="feed-zone">{item.location_zone_name ?? "Zona no definida"}</span>
             </div>
             <div className="feed-owner-note">
