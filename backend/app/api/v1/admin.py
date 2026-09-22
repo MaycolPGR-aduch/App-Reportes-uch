@@ -33,6 +33,7 @@ from app.models.moderation_decision import ModerationDecision
 from app.models.triage_decision import TriageDecision
 from app.services.governance_view import (
     estado_de_moderacion,
+    metrica_visible,
     ultima_decision,
     ultima_metrica,
     ultimo_triaje,
@@ -1524,12 +1525,8 @@ def triage_incident(
 
     # La propuesta vigente de la IA, si la hubo. En modo manual no hay ninguna,
     # y esa ausencia es parte de lo que mide el estudio.
-    metric = (
-        db.query(AIMetric)
-        .filter(AIMetric.incident_id == incident.id)
-        .order_by(AIMetric.created_at.desc())
-        .first()
-    )
+    # En modo manual no hay propuesta que registrar: quien decidio no la vio.
+    metric = metrica_visible(db, incident)
 
     coincide: bool | None = None
     if metric is not None:
@@ -1645,12 +1642,7 @@ def list_moderation_queue(
 
     items: list[ModerationQueueItem] = []
     for incident in incidents:
-        metric = (
-            db.query(AIMetric)
-            .filter(AIMetric.incident_id == incident.id)
-            .order_by(AIMetric.created_at.desc())
-            .first()
-        )
+        metric = metrica_visible(db, incident)
         decision = ultima_decision(db, incident.id)
         triaje = (
             db.query(TriageDecision)
@@ -1768,12 +1760,8 @@ def set_community_visibility(
             ),
         )
 
-    metric = (
-        db.query(AIMetric)
-        .filter(AIMetric.incident_id == incident.id)
-        .order_by(AIMetric.created_at.desc())
-        .first()
-    )
+    # En modo manual no hay propuesta que registrar: quien decidio no la vio.
+    metric = metrica_visible(db, incident)
     _v = veredicto_de(metric)
     evaluated, appropriate, is_incident = _v.evaluada, _v.apropiada, _v.es_incidencia
     if not evaluated:

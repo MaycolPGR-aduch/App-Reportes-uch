@@ -54,11 +54,32 @@ def resolver_modo(ajuste: str | None) -> GovernanceMode:
     return modo
 
 
-def usa_ia(modo: GovernanceMode) -> bool:
-    """Si a esta incidencia se le debe pedir una recomendación a la IA.
+def se_clasifica(modo: GovernanceMode, *, en_sombra: bool) -> bool:
+    """Si a esta incidencia se le pide una predicción a la IA.
 
-    En modo manual no se encola el trabajo de clasificación: no se llama al
-    proveedor, no se gasta cuota, y sobre todo no queda ningún proceso que
-    pueda tocar la incidencia. Es lo que hace limpio ese brazo.
+    Antes esta pregunta y la de si alguien ve la predicción eran la misma, y
+    el brazo manual no se clasificaba nunca. Eso dejaba sin respuesta la
+    comparación que exige el marco de evaluación del estudio: cómo lo habría
+    hecho la IA sola sobre las incidencias que decidió una persona sin ayuda.
+
+    Con `en_sombra`, el brazo manual también se clasifica, pero la predicción
+    no llega nunca a quien decide (ver `recomendacion_visible`). El brazo
+    sigue siendo manual para la persona, y el estudio gana la contrafactual.
+    """
+    if modo is GovernanceMode.AI_ASSISTED:
+        return True
+    if modo is GovernanceMode.MANUAL:
+        return en_sombra
+    # AI_AUTONOMOUS describe el pasado; no reactiva nada.
+    return False
+
+
+def recomendacion_visible(modo: GovernanceMode) -> bool:
+    """Si quien tría y modera puede ver lo que propuso la IA.
+
+    Es la única diferencia entre los dos brazos, y por eso vive en un solo
+    sitio: toda vista, registro o decisión que muestre o use la propuesta pasa
+    por aquí. Si un camino se la saltara, el brazo manual dejaría de serlo sin
+    que nada lo advirtiera.
     """
     return modo is GovernanceMode.AI_ASSISTED

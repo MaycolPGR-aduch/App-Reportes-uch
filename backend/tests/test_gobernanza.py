@@ -12,7 +12,12 @@ from collections import Counter
 import pytest
 
 from app.models.enums import GovernanceMode
-from app.services.governance import BRAZOS, resolver_modo, usa_ia
+from app.services.governance import (
+    BRAZOS,
+    recomendacion_visible,
+    resolver_modo,
+    se_clasifica,
+)
 
 
 # ------------------------------------------------- traduccion del ajuste
@@ -69,16 +74,27 @@ def test_el_reparto_no_devuelve_nunca_el_regimen_antiguo() -> None:
     }
 
 
-# --------------------------------------------- a quien se le llama la IA
+# ----------------------------------------------- clasificacion en sombra
 
-def test_solo_el_modo_asistido_llama_a_la_ia() -> None:
-    """Lo que hace limpio el brazo manual: sin trabajo encolado no hay ningun
-    proceso que pueda tocar la incidencia despues."""
-    assert usa_ia(GovernanceMode.AI_ASSISTED) is True
-    assert usa_ia(GovernanceMode.MANUAL) is False
+def test_el_brazo_asistido_siempre_se_clasifica() -> None:
+    assert se_clasifica(GovernanceMode.AI_ASSISTED, en_sombra=False) is True
+    assert se_clasifica(GovernanceMode.AI_ASSISTED, en_sombra=True) is True
 
 
-def test_el_regimen_antiguo_tampoco_llamaria_a_la_ia() -> None:
-    """Ninguna incidencia deberia tenerlo, pero si alguna lo tuviera no debe
-    reactivar la clasificacion automatica."""
-    assert usa_ia(GovernanceMode.AI_AUTONOMOUS) is False
+def test_el_brazo_manual_se_clasifica_solo_en_sombra() -> None:
+    """Sin la prediccion en sombra no se puede estimar como lo habria hecho la
+    IA sola sobre las incidencias que decidio una persona sin ayuda."""
+    assert se_clasifica(GovernanceMode.MANUAL, en_sombra=True) is True
+    assert se_clasifica(GovernanceMode.MANUAL, en_sombra=False) is False
+
+
+def test_el_regimen_antiguo_no_reactiva_la_clasificacion() -> None:
+    assert se_clasifica(GovernanceMode.AI_AUTONOMOUS, en_sombra=True) is False
+
+
+def test_solo_el_brazo_asistido_ve_la_propuesta() -> None:
+    """La unica diferencia entre los dos brazos: si se clasifica en sombra y
+    la prediccion llegara a verse, el brazo manual dejaria de serlo."""
+    assert recomendacion_visible(GovernanceMode.AI_ASSISTED) is True
+    assert recomendacion_visible(GovernanceMode.MANUAL) is False
+    assert recomendacion_visible(GovernanceMode.AI_AUTONOMOUS) is False

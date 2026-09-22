@@ -53,6 +53,7 @@ class Settings:
     ai_request_timeout_seconds: float
     ai_max_output_tokens: int
     governance_mode: str
+    shadow_classification: bool
     alerts_enabled: bool
     alert_silence_hours: int
     monitor_interval_minutes: int
@@ -148,6 +149,10 @@ def get_settings() -> Settings:
         # MANUAL | AI_ASSISTED | RANDOM. Decide con que regimen nace cada
         # incidencia; el valor se estampa en ella y no se vuelve a mirar.
         governance_mode=os.getenv("GOVERNANCE_MODE", "AI_ASSISTED").strip().upper(),
+        # Clasificar tambien el brazo manual, sin mostrarlo. Duplica las
+        # llamadas al proveedor; se puede apagar si la cuota aprieta, a
+        # costa de perder la contrafactual del estudio.
+        shadow_classification=_as_bool(os.getenv("SHADOW_CLASSIFICATION"), default=True),
         alerts_enabled=_as_bool(os.getenv("ALERTS_ENABLED"), default=True),
         alert_silence_hours=int(os.getenv("ALERT_SILENCE_HOURS", "6")),
         monitor_interval_minutes=int(os.getenv("MONITOR_INTERVAL_MINUTES", "15")),

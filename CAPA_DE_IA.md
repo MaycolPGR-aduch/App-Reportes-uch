@@ -3,7 +3,7 @@
 Cómo funciona la clasificación automática de incidencias, qué decide y qué no,
 y qué queda registrado de cada decisión.
 
-> **Estado a 2 de septiembre de 2026.** Este documento describe el sistema
+> **Estado a 22 de septiembre de 2026.** Este documento describe el sistema
 > después del cambio que convirtió a la IA de decisora en asesora. Si el
 > comportamiento que observas no coincide, comprueba primero que el despliegue
 > está al día.
@@ -23,17 +23,16 @@ automático, y quien moderaba no tenía ningún punto donde aceptar o corregir.
 
 ---
 
-## Paso 0 — La IA puede no llegar a existir
+## Paso 0 — Dos preguntas distintas: ¿se clasifica? ¿se ve?
 
 Al crear un reporte, `app/api/v1/reports.py` resuelve con qué **régimen de
-gobernanza** se procesa esa incidencia, y solo encola el trabajo de
-clasificación si corresponde:
+gobernanza** se procesa esa incidencia:
 
-| Régimen | Qué ocurre |
-|---|---|
-| `MANUAL` | No se llama al proveedor. Todo lo decide una persona |
-| `AI_ASSISTED` | Se encola la clasificación; la IA deja una recomendación |
-| `AI_AUTONOMOUS` | Régimen anterior al estudio. Solo etiqueta lo ya ocurrido; no se puede configurar |
+| Régimen | ¿Se clasifica? | ¿Lo ve quien decide? |
+|---|---|---|
+| `MANUAL` | Sí, **en sombra** (si `SHADOW_CLASSIFICATION=true`) | **Nunca** |
+| `AI_ASSISTED` | Sí | Sí |
+| `AI_AUTONOMOUS` | No. Régimen anterior al estudio; solo etiqueta lo ya ocurrido | — |
 
 El ajuste global `GOVERNANCE_MODE` admite `MANUAL`, `AI_ASSISTED` o `RANDOM`.
 Con `RANDOM`, cada incidencia cae en uno de los dos brazos al azar.
@@ -43,10 +42,33 @@ mirar. Cambiar el ajuste global mañana no reetiqueta lo de hoy: sin eso, una
 incidencia procesada en enero aparecería en el brazo que estuviera activo en
 marzo, y el experimento no significaría nada.
 
-En modo manual no solo se ahorra la cuota: **no queda ningún proceso que pueda
-tocar la incidencia**. Eso es lo que hace limpio ese brazo.
+### La clasificación en sombra
 
-La lógica vive en `app/services/governance.py` (`resolver_modo`, `usa_ia`).
+El brazo manual también se clasifica, pero la predicción **no llega nunca a
+quien decide**. Existe para una comparación que sin ella sería imposible: cómo
+lo habría hecho la IA sola sobre las incidencias que decidió una persona sin
+ayuda. Es la «calidad contrafactual» que exige el marco de evaluación del
+estudio.
+
+Para que el brazo siga siendo manual, la sombra no deja rastro visible:
+
+- La predicción se guarda en `ai_metrics` igual que en el brazo asistido
+- **No cambia el estado** de la incidencia: verla pasar sola a `IN_REVIEW` ya
+  le diría a quien decide que la IA la evaluó
+- **No aparece** en la ficha, ni en «Análisis de la IA», ni en el veredicto de
+  moderación
+- **No se copia** al registro de triaje: `ai_suggested_*` queda vacío, porque
+  quien decidió no la vio
+
+Todo camino que muestre o use la propuesta pasa por una sola función,
+`metrica_visible` (`app/services/governance_view.py`). Leer `ai_metrics`
+directamente desde una vista sería exactamente la forma de filtrarla.
+
+El coste: duplica las llamadas al proveedor. `SHADOW_CLASSIFICATION=false` las
+ahorra, a costa de perder la contrafactual.
+
+La lógica vive en `app/services/governance.py` (`resolver_modo`,
+`se_clasifica`, `recomendacion_visible`).
 
 ---
 
@@ -110,8 +132,9 @@ predicted_category · priority_score · priority_label
 confidence · latency_ms · reasoning_summary · raw_response
 ```
 
-Lo único que la IA cambia en la incidencia es el estado: si estaba en
-`REPORTED`, pasa a `IN_REVIEW`, que significa *hay algo que mirar*.
+Lo único que la IA cambia en la incidencia es el estado, y solo en el brazo
+asistido: si estaba en `REPORTED`, pasa a `IN_REVIEW`, que significa *hay algo
+que mirar*. En el brazo manual no cambia nada (ver «La clasificación en sombra»).
 
 **No toca** la categoría, la prioridad, la visibilidad, ni crea asignaciones.
 
@@ -183,8 +206,10 @@ reconstruir:
 cambiar. Sin ella no se podría medir cuántas veces se corrige a la persona que
 reporta, ni si esas correcciones aciertan.
 
-**En modo `MANUAL` las columnas de IA quedan vacías, y esa ausencia es el dato.**
-No haber tenido propuesta es distinto de haberla corregido: el campo
+**En modo `MANUAL` las columnas de IA de `triage_decisions` quedan vacías, y
+esa ausencia es el dato.** La predicción en sombra no está ahí sino en
+`ai_metrics`, que es de donde hay que leerla para la comparación contrafactual.
+No haber visto propuesta es distinto de haberla corregido: el campo
 `agreed_with_ai` vale `None` en el primer caso y `False` en el segundo.
 Mezclarlos falsearía las medias.
 
@@ -200,6 +225,7 @@ dato que no existe.
 | Variable | Para qué |
 |---|---|
 | `GOVERNANCE_MODE` | `MANUAL` · `AI_ASSISTED` · `RANDOM` |
+| `SHADOW_CLASSIFICATION` | Clasificar en sombra el brazo manual. Por omisión `true` |
 | `AI_TOKENROUTER_API_KEY` | Credencial del proveedor |
 | `AI_TOKENROUTER_BASE_URL` | Extremo del proveedor |
 | `AI_IMAGE_PRIMARY_MODEL` | Modelo principal |

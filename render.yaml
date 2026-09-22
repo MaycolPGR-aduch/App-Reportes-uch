@@ -101,6 +101,8 @@ services:
       # MANUAL | AI_ASSISTED | RANDOM. Se estampa en cada incidencia al crearla.
       - key: GOVERNANCE_MODE
         value: AI_ASSISTED
+      - key: SHADOW_CLASSIFICATION
+        value: "true"
       - key: AI_REQUEST_TIMEOUT_SECONDS
         value: "45"
       - key: AI_MAX_OUTPUT_TOKENS

@@ -13,6 +13,7 @@ from app.db.session import SessionLocal
 from app.models.ai_metric import AIMetric
 from app.models.enums import IncidentStatus, JobType, PriorityLevel
 from app.models.incident import Incident
+from app.services.governance import recomendacion_visible
 from app.services.ai import AIClassificationError, classify_incident
 from app.services.jobs import claim_next_job, complete_job, fail_job, recover_expired_leases
 
@@ -138,13 +139,20 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             # sola aunque la IA la marque como inapropiada, porque eso volveria
             # a introducir una automatizacion que el brazo manual no tiene.
             # Es seguro: nada se publica sin aprobacion humana en ningun modo.
-            if incident.status == IncidentStatus.REPORTED:
+            #
+            # En el brazo manual la clasificacion corre en sombra y no toca
+            # nada: ni siquiera el estado, porque ver una incidencia pasar sola
+            # a IN_REVIEW ya le diria a quien decide que la IA la evaluo.
+            if recomendacion_visible(incident.governance_mode) and (
+                incident.status == IncidentStatus.REPORTED
+            ):
                 incident.status = IncidentStatus.IN_REVIEW
 
             logger.info(
-                "ai_suggestion_recorded incident_id=%s categoria=%s prioridad=%s "
+                "ai_suggestion_recorded incident_id=%s sombra=%s categoria=%s prioridad=%s "
                 "confianza=%.3f apropiada=%s es_incidencia=%s",
                 incident.id,
+                not recomendacion_visible(incident.governance_mode),
                 result.predicted_category.value,
                 result.priority_label.value,
                 float(result.confidence),
@@ -175,7 +183,9 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 error_message=str(exc),
                 retry_delay_seconds=settings.classification_retry_delay_seconds,
             )
-            if job.status.value == "FAILED":
+            if job.status.value == "FAILED" and recomendacion_visible(
+                incident.governance_mode
+            ):
                 incident.status = IncidentStatus.IN_REVIEW
             db.commit()
             logger.warning(

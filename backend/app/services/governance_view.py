@@ -22,6 +22,7 @@ from app.models.ai_metric import AIMetric
 from app.models.incident import Incident
 from app.models.moderation_decision import ModerationDecision
 from app.models.triage_decision import TriageDecision
+from app.services.governance import recomendacion_visible
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,19 @@ def ultima_metrica(db: Session, incident_id: UUID) -> AIMetric | None:
         .order_by(AIMetric.created_at.desc())
         .first()
     )
+
+
+def metrica_visible(db: Session, incident: Incident) -> AIMetric | None:
+    """La propuesta de la IA, solo si quien decide puede verla.
+
+    En el brazo manual la prediccion existe --se hace en sombra para el
+    estudio-- pero para cualquier vista, registro o decision es como si no
+    existiera. Todo lo que muestra o usa la propuesta debe pedirla aqui y no a
+    `ultima_metrica`; ese atajo es exactamente como se filtraria.
+    """
+    if not recomendacion_visible(incident.governance_mode):
+        return None
+    return ultima_metrica(db, incident.id)
 
 
 def ultima_decision(db: Session, incident_id: UUID) -> ModerationDecision | None:
@@ -109,7 +123,7 @@ def estado_de_moderacion(
 
 def vista_de_gobernanza(db: Session, incident: Incident) -> VistaGobernanza:
     """Reune en una consulta lo que triaje y moderacion necesitan saber."""
-    metric = ultima_metrica(db, incident.id)
+    metric = metrica_visible(db, incident)
     decision = ultima_decision(db, incident.id)
     triaje = ultimo_triaje(db, incident.id)
     veredicto = veredicto_de(metric)

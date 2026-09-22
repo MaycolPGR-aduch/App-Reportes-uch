@@ -55,7 +55,11 @@ from app.services.sanitizer import sanitize_description, sanitize_title
 from app.services.captcha import verify_turnstile
 from app.services.images import InvalidImageError, normalize_image
 from app.services.rate_limit import client_identifier, enforce_rate_limit
-from app.services.governance import resolver_modo, usa_ia
+from app.services.governance import (
+    recomendacion_visible,
+    resolver_modo,
+    se_clasifica,
+)
 from app.services.governance_view import vista_de_gobernanza
 from app.services.storage import EvidenceNotStored, get_storage_provider
 
@@ -152,7 +156,13 @@ def _build_incident_detail(
         reporter_name=incident.reporter.full_name if include_sensitive and incident.reporter else "Reporte protegido",
         location=location,
         evidences=evidences,
-        ai_metrics=ai_metrics if include_sensitive else [],
+        # En el brazo manual la clasificacion corrio en sombra: existe, pero
+        # quien decide no debe verla, ni aqui ni en el bloque de gobernanza.
+        ai_metrics=(
+            ai_metrics
+            if include_sensitive and recomendacion_visible(incident.governance_mode)
+            else []
+        ),
         assignments=assignments,
         notifications=notifications if include_sensitive else [],
         # Triaje y moderacion viven en el detalle de cualquier incidencia, no
@@ -344,15 +354,19 @@ async def create_report(
     )
     db.add_all([location, evidence])
 
-    # En modo manual no se encola: no se llama al proveedor, no se gasta cuota
-    # y --lo que importa-- no queda ningun proceso que pueda tocar la
-    # incidencia. Es lo que hace limpio ese brazo del experimento.
-    if usa_ia(modo):
+    # En modo manual se clasifica en sombra: la prediccion se guarda para el
+    # estudio pero nunca llega a quien decide. El trabajador tampoco toca la
+    # incidencia, asi que el brazo sigue siendo manual para la persona.
+    if se_clasifica(modo, en_sombra=settings.shadow_classification):
         enqueue_job(
             db,
             incident_id=incident.id,
             job_type=JobType.CLASSIFY_INCIDENT,
-            payload={"source": "report_created", "governance_mode": modo.value},
+            payload={
+                "source": "report_created",
+                "governance_mode": modo.value,
+                "shadow": not recomendacion_visible(modo),
+            },
         )
 
     try:
