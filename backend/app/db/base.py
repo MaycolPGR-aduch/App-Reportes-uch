@@ -8,6 +8,7 @@ from app.models.community_reaction import CommunityReaction
 from app.models.moderation_decision import ModerationDecision
 from app.models.system_alert import SystemAlert
 from app.models.triage_decision import TriageDecision
+from app.models.status_event import IncidentStatusEvent
 from app.models.evidence import IncidentEvidence
 from app.models.incident import Incident
 from app.models.job import Job
@@ -36,7 +37,8 @@ __all__ = [
     "ModerationDecision",
     "SystemAlert",
     "TriageDecision",
+    "IncidentStatusEvent",
 ]
 
-# Registra el escucha que avisa al reportante al resolverse su incidencia.
+# Registra los escuchas de estado: aviso al reportante e historial de estados.
 from app.services import incident_events  # noqa: E402,F401

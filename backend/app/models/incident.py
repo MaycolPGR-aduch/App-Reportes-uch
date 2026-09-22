@@ -106,3 +106,11 @@ class Incident(Base, TimestampMixin):
     reactions: Mapped[list["CommunityReaction"]] = relationship(
         back_populates="incident", cascade="all, delete-orphan"
     )
+    #: Historial de estados, en orden. Lo escribe un escucha de sesion
+    #: (services/incident_events.py), nunca el codigo que cambia el estado.
+    status_events: Mapped[list["IncidentStatusEvent"]] = relationship(
+        back_populates="incident",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="IncidentStatusEvent.at",
+    )
