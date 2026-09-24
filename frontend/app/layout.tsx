@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import { PwaRegister } from "@/components/pwa-register";
+import { AppFooter } from "@/components/app-footer";
 import { AppHeader } from "@/components/app-header";
 import { themeBootstrapScript } from "@/components/theme-toggle";
 import "./globals.css";
@@ -70,6 +71,7 @@ export default function RootLayout({
         <div id="contenido" className="flex flex-1 flex-col">
           {children}
         </div>
+        <AppFooter />
       </body>
     </html>
   );
