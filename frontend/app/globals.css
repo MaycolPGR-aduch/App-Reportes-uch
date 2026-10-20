@@ -411,9 +411,12 @@
   --color-background: var(--surface-app);
   --color-foreground: var(--text-default);
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, "Cascadia Code", Consolas, monospace;
+  --font-inter: "Inter", "Segoe UI", Arial, sans-serif;
+  --font-jakarta: "Plus Jakarta Sans", "Inter", "Segoe UI", Arial, sans-serif;
+  --font-jetbrains: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-jakarta);
+  --font-mono: var(--font-jetbrains);
 
   --radius-card: 0.875rem;
   --shadow-card: var(--shadow-sm);

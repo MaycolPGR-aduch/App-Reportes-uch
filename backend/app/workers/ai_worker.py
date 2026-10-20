@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import socket
 import time
-from pathlib import Path
 
 from sqlalchemy.orm import joinedload
 
@@ -16,28 +15,24 @@ from app.models.incident import Incident
 from app.services.governance import recomendacion_visible
 from app.services.ai import AIClassificationError, classify_incident
 from app.services.jobs import claim_next_job, complete_job, fail_job, recover_expired_leases
+from app.services.storage import StorageProvider, get_storage_provider
 
 logger = logging.getLogger("campus.workers.ai")
 
 def _safe_load_evidence_bytes(
     *,
-    storage_root: Path,
+    storage: StorageProvider,
     relative_path: str | None,
+    size_bytes: int | None = None,
     max_bytes: int = 4 * 1024 * 1024,
 ) -> bytes | None:
-    if not relative_path:
+    if not relative_path or (size_bytes is not None and size_bytes > max_bytes):
         return None
     try:
-        candidate = (storage_root.parent / relative_path).resolve()
-        storage_parent = storage_root.parent.resolve()
-        if storage_parent not in candidate.parents and candidate != storage_parent:
+        content = storage.read(relative_path)
+        if not content or len(content) > max_bytes:
             return None
-        if not candidate.exists() or not candidate.is_file():
-            return None
-        file_size = candidate.stat().st_size
-        if file_size <= 0 or file_size > max_bytes:
-            return None
-        return candidate.read_bytes()
+        return content
     except Exception:
         return None
 
@@ -89,8 +84,9 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             first_evidence = incident.evidences[0]
             image_mime_type = first_evidence.mime_type
             image_bytes = _safe_load_evidence_bytes(
-                storage_root=settings.local_storage_path,
+                storage=get_storage_provider(),
                 relative_path=first_evidence.storage_path,
+                size_bytes=first_evidence.file_size_bytes,
             )
 
         try:

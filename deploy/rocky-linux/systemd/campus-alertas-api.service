@@ -1,0 +1,25 @@
+[Unit]
+Description=Campus Alertas FastAPI
+Wants=network-online.target
+Requires=postgresql.service
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=campus-alertas
+Group=campus-alertas
+WorkingDirectory=/opt/campus-alertas/current/backend
+EnvironmentFile=/etc/campus-alertas/app.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/campus-alertas/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/campus-alertas
+
+[Install]
+WantedBy=multi-user.target

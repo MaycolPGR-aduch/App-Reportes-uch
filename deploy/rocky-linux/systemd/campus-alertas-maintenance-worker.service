@@ -1,0 +1,25 @@
+[Unit]
+Description=Campus Alertas maintenance worker
+Wants=network-online.target
+Requires=postgresql.service
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=campus-alertas
+Group=campus-alertas
+WorkingDirectory=/opt/campus-alertas/current/backend
+EnvironmentFile=/etc/campus-alertas/app.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/campus-alertas/venv/bin/python -m app.workers.maintenance_worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/campus-alertas
+
+[Install]
+WantedBy=multi-user.target

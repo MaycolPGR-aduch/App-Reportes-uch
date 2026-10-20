@@ -1,29 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import { PwaRegister } from "@/components/pwa-register";
 import { AppFooter } from "@/components/app-footer";
 import { AppHeader } from "@/components/app-header";
 import { themeBootstrapScript } from "@/components/theme-toggle";
 import "./globals.css";
-
-/*
- * Tres cortes con un trabajo cada uno: Jakarta para titulares, Inter para
- * la interfaz y JetBrains para lo que se copia y se compara carácter a
- * carácter —identificadores de incidencia y coordenadas—. Las tres son
- * variables, así que pesan un archivo por familia y no uno por grosor.
- */
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-jakarta",
-  display: "swap",
-});
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Campus Alertas",
@@ -49,7 +30,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`h-full ${inter.variable} ${jakarta.variable} ${jetbrains.variable}`}
+      className="h-full"
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col">

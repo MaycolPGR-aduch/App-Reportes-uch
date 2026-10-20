@@ -10,8 +10,8 @@ el estado operativo.
 - **Frontend:** Next.js PWA en `frontend/`.
 - **API:** FastAPI y PostgreSQL en `backend/`.
 - **Workers:** clasificación IA mediante TokenRouter, notificaciones por Brevo y mantenimiento diario.
-- **Evidencias:** almacenamiento privado local para desarrollo o Render Disk en el despliegue
-  actual; admite copia cifrada a almacenamiento S3 compatible.
+- **Evidencias:** almacenamiento privado local para desarrollo o almacenamiento S3 compatible
+  (Cloudflare R2) en producción.
 
 ## Seguridad y privacidad
 
@@ -64,6 +64,8 @@ La integración continua ejecuta estas verificaciones en cada push y pull reques
 
 ## Despliegue
 
-`render.yaml` describe el despliegue en Render. Configura los secretos únicamente en
-Render; nunca subas archivos `.env`. Consulta `backend/README.md` para migraciones, variables
-de entorno y consideraciones del Render Disk.
+`render.yaml` describe el despliegue actual en Render. Configura los secretos únicamente en el
+proveedor de ejecución; nunca subas archivos `.env`. Para preparar una instalación institucional
+en Rocky Linux 10, consulta [GUIA_DESPLIEGUE_ROCKY_LINUX.md](GUIA_DESPLIEGUE_ROCKY_LINUX.md).
+La guía y los archivos de `deploy/rocky-linux/` son la base de adaptación; requieren instalación
+y pruebas de aceptación en el servidor institucional antes de producción.
