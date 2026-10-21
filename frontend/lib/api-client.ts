@@ -507,10 +507,15 @@ export async function login(campusId: string, password: string): Promise<Session
   return session;
 }
 
-export async function registerUser(payload: PublicRegisterPayload): Promise<{ message: string }> {
+export async function registerUser(
+  payload: PublicRegisterPayload,
+  turnstileToken?: string | null,
+): Promise<{ message: string }> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (turnstileToken) headers.set("X-Turnstile-Token", turnstileToken);
   return request<{ message: string }>("/auth/register", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(payload),
   });
 }

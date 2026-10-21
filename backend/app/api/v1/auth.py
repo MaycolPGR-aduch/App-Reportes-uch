@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
@@ -102,7 +102,7 @@ def bootstrap_admin(
 def register(
     payload: PublicRegisterRequest,
     request: Request,
-    turnstile_token: str | None = None,
+    turnstile_token: str | None = Header(default=None, alias="X-Turnstile-Token"),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     settings = get_settings()

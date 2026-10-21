@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/auth-card";
 import { PasswordInput } from "@/components/password-input";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { registerUser } from "@/lib/api-client";
 import { rutaDeRetornoSegura } from "@/lib/next-url";
 import { Field, Input } from "@/components/ui";
@@ -15,6 +16,7 @@ function RegisterForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,7 +32,7 @@ function RegisterForm() {
         full_name: fullName.trim(),
         email: email.trim(),
         password,
-      });
+      }, turnstileToken);
       setPassword("");
       // Se muestra el mensaje del servidor en vez de redirigir: dice si hay que
       // revisar el correo o esperar a que un administrador active la cuenta, y
@@ -122,6 +124,8 @@ function RegisterForm() {
           />
         )}
       </Field>
+
+      <TurnstileWidget onToken={setTurnstileToken} />
     </AuthCard>
   );
 }

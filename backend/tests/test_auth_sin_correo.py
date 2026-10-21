@@ -112,6 +112,24 @@ def test_con_correo_se_comporta_como_siempre(monkeypatch, sin_ruido) -> None:
     assert "verify" in respuesta.message.lower()
 
 
+def test_registro_verifica_el_token_turnstile_recibido(monkeypatch, sin_ruido) -> None:
+    tokens_verificados: list[str | None] = []
+    monkeypatch.setattr(
+        auth, "verify_turnstile", lambda token, _request: tokens_verificados.append(token)
+    )
+    monkeypatch.setattr(auth, "email_delivery_configured", lambda: False)
+    db = _Sesion()
+
+    auth.register(
+        _peticion_de_registro(),
+        _peticion_http(),
+        "turnstile-test-token",
+        db,
+    )
+
+    assert tokens_verificados == ["turnstile-test-token"]
+
+
 # ------------------------------------------------- recuperacion de clave
 
 def _usuario_registrado() -> User:
