@@ -57,6 +57,8 @@ async def security_middleware(request: Request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Invalid CSRF token"})
 
     response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
     response.headers["X-Trace-Id"] = trace_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"

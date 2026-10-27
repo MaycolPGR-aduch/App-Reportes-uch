@@ -98,9 +98,14 @@ export default function AdminDashboardPage() {
   };
 
   const salir = async () => {
-    await logout().catch(() => undefined);
-    setEstado("SIN_ACCESO");
-    setSeccion("OVERVIEW");
+    try {
+      await logout();
+      setEstado("SIN_ACCESO");
+      setSeccion("OVERVIEW");
+    } catch {
+      setAuthError("No se pudo cerrar la sesión. Inténtalo nuevamente.");
+      window.alert("No se pudo cerrar la sesión. Inténtalo nuevamente.");
+    }
   };
 
   if (estado === "COMPROBANDO") {

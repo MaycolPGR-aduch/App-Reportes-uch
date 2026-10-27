@@ -488,6 +488,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    cache: "no-store",
     credentials: "include",
     headers,
   });
@@ -575,11 +576,9 @@ export async function revokeOtherSessions(): Promise<{ message: string }> {
 }
 
 export async function logout(): Promise<{ message: string }> {
-  try {
-    return await request<{ message: string }>("/auth/logout", { method: "POST" });
-  } finally {
-    recordarCsrf(null);
-  }
+  const result = await request<{ message: string }>("/auth/logout", { method: "POST" });
+  recordarCsrf(null);
+  return result;
 }
 
 export async function createReport(

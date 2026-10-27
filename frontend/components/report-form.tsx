@@ -105,8 +105,13 @@ export function ReportForm() {
   const needsLogin = mode === "AUTHENTICATED" && !token;
   const ready = missing.length === 0 && !needsLogin;
 
-  const handleLogout = () => {
-    void logout().catch(() => undefined);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      setSubmitError("No se pudo cerrar la sesión. Inténtalo nuevamente.");
+      return;
+    }
     setToken(null);
     setRole(null);
     setCampusIdStored(null);
@@ -176,7 +181,9 @@ export function ReportForm() {
       setShowFieldErrors(false);
     } catch (error) {
       if (error instanceof ApiHttpError && error.status === 401) {
-        handleLogout();
+        setToken(null);
+        setRole(null);
+        setCampusIdStored(null);
         setSubmitError("Tu sesión expiró. Inicia sesión de nuevo para enviar el reporte.");
         return;
       }

@@ -116,8 +116,12 @@ export default function ProfilePage() {
   };
 
   const salir = async () => {
-    await logout().catch(() => undefined);
-    router.replace("/login");
+    try {
+      await logout();
+      router.replace("/login");
+    } catch {
+      window.alert("No se pudo cerrar la sesión. Inténtalo nuevamente.");
+    }
   };
 
   if (!perfil) {

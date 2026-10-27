@@ -202,9 +202,15 @@ export default function StaffDashboardPage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              clearSession();
-              router.replace("/dashboard");
+            onClick={async () => {
+              try {
+                await logout();
+                setToken(null);
+                setCampusId(null);
+                router.replace("/login");
+              } catch {
+                window.alert("No se pudo cerrar la sesión. Inténtalo nuevamente.");
+              }
             }}
           >
             Cerrar sesión
