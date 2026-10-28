@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
     try {
       const response = await login(campusId.trim(), password);
       setPassword("");
-      if (!admitir(response.role)) await logout().catch(() => undefined);
+      if (!admitir(response.role)) window.location.assign("/dashboard");
     } catch (cause) {
       setAuthError(cause instanceof Error ? cause.message : "No se pudo iniciar sesión");
     } finally {
@@ -129,7 +129,7 @@ export default function AdminDashboardPage() {
         loadingLabel="Entrando..."
         onSubmit={entrar}
         footer={
-          <Link href="/" className="font-semibold text-brand-text hover:underline">
+          <Link href="/reportar" className="font-semibold text-brand-text hover:underline">
             Volver a reportar
           </Link>
         }

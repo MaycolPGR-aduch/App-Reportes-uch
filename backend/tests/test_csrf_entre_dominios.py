@@ -129,3 +129,29 @@ def test_app_main_monta_cors_por_fuera_del_middleware_de_seguridad() -> None:
         f"CORS debe envolver al resto para que sus cabeceras lleguen a las "
         f"respuestas de error; orden actual: {nombres}"
     )
+
+
+@pytest.mark.parametrize("cookie,header,expected", [
+    (None, None, 403),
+    ("", "", 403),
+    ("token", None, 403),
+    (None, "token", 403),
+    ("token", "otro", 403),
+    ("token", "token", 200),
+])
+def test_middleware_real_exige_dos_tokens_csrf(cookie, header, expected) -> None:
+    from app.main import app
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    cookies = {settings.session_cookie_name: "sesion-de-prueba"}
+    if cookie is not None:
+        cookies[settings.csrf_cookie_name] = cookie
+    headers = {"X-CSRF-Token": header} if header is not None else {}
+    # Una ruta de prueba sin autenticación aísla el middleware real.
+    if not any(getattr(route, "path", None) == "/_test-csrf" for route in app.routes):
+        app.add_api_route("/_test-csrf", lambda: {"ok": True}, methods=["POST"])
+    client = TestClient(app)
+    client.cookies.update(cookies)
+    response = client.post("/_test-csrf", headers=headers)
+    assert response.status_code == expected

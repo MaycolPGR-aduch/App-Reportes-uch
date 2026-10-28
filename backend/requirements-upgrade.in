@@ -1,0 +1,14 @@
+# Dependencias directas; generar requirements.txt para Python 3.12 con uv pip compile --universal.
+alembic>=1.16.5
+boto3>=1.40.0
+cryptography>=50.0.0
+fastapi>=0.135.1
+httpx>=0.28.1
+Pillow>=13.0.0
+psycopg2-binary>=2.9.11
+pytest>=9.0.3
+python-dotenv>=1.2.2
+python-multipart>=0.0.31
+requests>=2.33.0
+SQLAlchemy>=2.0.48
+uvicorn[standard]>=0.42.0

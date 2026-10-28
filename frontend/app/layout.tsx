@@ -3,6 +3,7 @@ import Script from "next/script";
 import { PwaRegister } from "@/components/pwa-register";
 import { AppFooter } from "@/components/app-footer";
 import { AppHeader } from "@/components/app-header";
+import { SessionSync } from "@/components/session-sync";
 import { themeBootstrapScript } from "@/components/theme-toggle";
 import "./globals.css";
 
@@ -48,6 +49,7 @@ export default function RootLayout({
           Saltar al contenido
         </a>
         <PwaRegister />
+        <SessionSync />
         <AppHeader />
         <div id="contenido" className="flex flex-1 flex-col">
           {children}

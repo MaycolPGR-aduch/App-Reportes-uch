@@ -7,7 +7,9 @@ import {
   IncidentCategory,
   IncidentStatus,
   StudentFeedItem,
+  UserRole,
   addCommunityReaction,
+  getCurrentUser,
   getCommunityFeedImageObjectUrl,
   getMyIncidentFeedImageObjectUrl,
   listCommunityFeed,
@@ -78,6 +80,7 @@ type IncidentCardProps = {
   reactingId: string | null;
   onRevoke: (item: StudentFeedItem) => void;
   revokingId: string | null;
+  viewerRole: UserRole | null;
 };
 
 function IncidentCard({
@@ -88,6 +91,7 @@ function IncidentCard({
   reactingId,
   onRevoke,
   revokingId,
+  viewerRole,
 }: IncidentCardProps) {
   const isMine = tab === "MINE";
   const mine = item as StudentFeedItem;
@@ -134,7 +138,7 @@ function IncidentCard({
               <p>
                 {mine.is_community_visible
                   ? "Compartido anónimamente en Comunidad."
-                  : "La publicación está pendiente de la validación de IA."}
+                  : "La publicación está pendiente de revisión."}
               </p>
               <button
                 type="button"
@@ -153,7 +157,7 @@ function IncidentCard({
         <div className="feed-reaction-bar">
           {community.is_own_report ? (
             <span className="text-xs font-semibold text-[var(--tone-success-fg)]">Tu reporte compartido</span>
-          ) : (
+          ) : viewerRole === "STUDENT" ? (
             <button
               type="button"
               className={`feed-reaction ${community.reacted_by_me ? "is-active" : ""}`}
@@ -163,6 +167,10 @@ function IncidentCard({
             >
               {community.reacted_by_me ? "✓ Apoyado" : "♡ Apoyar"}
             </button>
+          ) : viewerRole === null ? (
+            <Link href="/login?next=/" className="feed-text-action">Inicia sesión para apoyar</Link>
+          ) : (
+            <span className="text-xs text-muted">Apoyos disponibles para estudiantes</span>
           )}
           <span className="text-xs font-semibold text-muted">
             {community.reaction_count} {community.reaction_count === 1 ? "apoyo" : "apoyos"}
@@ -173,8 +181,9 @@ function IncidentCard({
   );
 }
 
-export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string; onLogout: () => void }) {
-  const [tab, setTab] = useState<FeedTab>("MINE");
+export function StudentIncidentsFeed({ fullName, onLogout, publicView = false }: { fullName?: string; onLogout?: () => void; publicView?: boolean }) {
+  const [tab, setTab] = useState<FeedTab>(publicView ? "COMMUNITY" : "MINE");
+  const [viewerRole, setViewerRole] = useState<UserRole | null>(publicView ? null : "STUDENT");
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "">("");
   const [categoryFilter, setCategoryFilter] = useState<IncidentCategory | "">("");
   const [myItems, setMyItems] = useState<StudentFeedItem[]>([]);
@@ -187,6 +196,17 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
   const [reactingId, setReactingId] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!publicView) return;
+    let active = true;
+    getCurrentUser().then((user) => {
+      if (active) setViewerRole(user.role);
+    }).catch(() => {
+      if (active) setViewerRole(null);
+    });
+    return () => { active = false; };
+  }, [publicView]);
 
   const loadFeed = useCallback(
     async (reset: boolean) => {
@@ -275,27 +295,27 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
       <header className="student-feed-header">
         <div>
           <p className="student-feed-kicker">Campus Alertas</p>
-          <h1>Hola, {fullName.split(" ")[0]}</h1>
-          <p>Consulta tus reportes o las incidencias compartidas por la comunidad.</p>
+          <h1>{publicView ? "Incidencias de la comunidad" : `Hola, ${(fullName || "estudiante").split(" ")[0]}`}</h1>
+          <p>{publicView ? "Consulta los reportes compartidos públicamente en el campus." : "Consulta tus reportes o las incidencias compartidas por la comunidad."}</p>
         </div>
         <div className="student-feed-actions">
-          <Link href="/" className={buttonClasses("primary", "sm")}>
+          <Link href="/reportar" className={buttonClasses("primary", "sm")}>
             Crear reporte
           </Link>
-          <Button variant="secondary" size="sm" onClick={onLogout}>
+          {onLogout ? <Button variant="secondary" size="sm" onClick={onLogout}>
             Cerrar sesión
-          </Button>
+          </Button> : null}
         </div>
       </header>
 
-      <nav className="student-feed-tabs" aria-label="Panel de incidencias">
+      {!publicView ? <nav className="student-feed-tabs" aria-label="Panel de incidencias">
         <button type="button" className={tab === "MINE" ? "is-active" : ""} onClick={() => setTab("MINE")}>
           Mis reportes
         </button>
         <button type="button" className={tab === "COMMUNITY" ? "is-active" : ""} onClick={() => setTab("COMMUNITY")}>
           Comunidad
         </button>
-      </nav>
+      </nav> : null}
 
       <section className="student-feed-toolbar" aria-label="Filtros">
         <select
@@ -333,7 +353,7 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
         {/* El esqueleto ocupa el sitio de las tarjetas que van a llegar, para
             que la lista no dé un salto cuando lleguen. */}
         {loading ? <FeedSkeleton /> : null}
-        {!loading && activeItems.length === 0 ? (
+        {!loading && !error && activeItems.length === 0 ? (
           <EmptyState
             title={tab === "MINE" ? "Aún no tienes reportes" : "Aún no hay reportes compartidos"}
             description={
@@ -343,7 +363,7 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
             }
             action={
               tab === "MINE" ? (
-                <Link href="/" className={buttonClasses("primary", "sm")}>
+                <Link href="/reportar" className={buttonClasses("primary", "sm")}>
                   Crear mi primer reporte
                 </Link>
               ) : null
@@ -361,6 +381,7 @@ export function StudentIncidentsFeed({ fullName, onLogout }: { fullName: string;
                 reactingId={reactingId}
                 onRevoke={handleRevoke}
                 revokingId={revokingId}
+                viewerRole={viewerRole}
               />
             ))
           : null}

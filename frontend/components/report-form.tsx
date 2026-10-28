@@ -224,10 +224,10 @@ export function ReportForm() {
               Para asociar el reporte a tu identidad necesitas iniciar sesión.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Link href="/login?next=/" className={buttonClasses("primary", "sm")}>
+              <Link href="/login?next=/reportar" className={buttonClasses("primary", "sm")}>
                 Iniciar sesión
               </Link>
-              <Link href="/register?next=/" className={buttonClasses("secondary", "sm")}>
+              <Link href="/register?next=/reportar" className={buttonClasses("secondary", "sm")}>
                 Crear cuenta
               </Link>
             </div>
@@ -398,8 +398,8 @@ export function ReportForm() {
               <Checkbox
                 checked={communityConsent}
                 onChange={(event) => setCommunityConsent(event.target.checked)}
-                label="Compartir anónimamente en Comunidad"
-                description="Podrá aparecer sin tu identidad tras una revisión automática. Puedes retirarlo desde Mis reportes."
+                label="Compartir públicamente en Comunidad"
+                description="Tras la revisión, la foto y la descripción podrán ser visibles por cualquier persona, incluso sin cuenta. No incluyas datos personales. Puedes retirarlo desde Mis reportes."
               />
             </div>
           </Step>

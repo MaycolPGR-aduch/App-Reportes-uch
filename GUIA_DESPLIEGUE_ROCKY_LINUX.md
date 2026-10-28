@@ -1,5 +1,7 @@
 # Despliegue institucional en Rocky Linux 10
 
+> **Servidor institucional existente:** el resto de esta guía contiene un ejemplo genérico con Nginx y puerto 3000; no lo apliques sobre el servidor de la institución. Allí ya funciona Apache en 80/443 y el frontend usa 127.0.0.1:3001. Consulta [la guía específica](docs/operacion-rocky-institucional.md) y coordina cualquier cambio de proxy con TI.
+
 Guía de preparación para alojar Campus Alertas en un servidor institucional. Los archivos de
 `deploy/rocky-linux/` contienen las unidades `systemd` y el ejemplo Nginx.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -47,12 +48,14 @@ logger = logging.getLogger("campus.security")
 async def security_middleware(request: Request, call_next):
     trace_id = request.headers.get("X-Trace-Id") or uuid.uuid4().hex
     session_token = request.cookies.get(settings.session_cookie_name)
+    csrf_cookie = request.cookies.get(settings.csrf_cookie_name)
+    csrf_header = request.headers.get("X-CSRF-Token")
     exempt_paths = {"/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/bootstrap-admin"}
     if (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and session_token
         and request.url.path not in exempt_paths
-        and request.headers.get("X-CSRF-Token") != request.cookies.get(settings.csrf_cookie_name)
+        and (not csrf_cookie or not csrf_header or not secrets.compare_digest(csrf_header.encode(), csrf_cookie.encode()))
     ):
         return JSONResponse(status_code=403, content={"detail": "Invalid CSRF token"})
 

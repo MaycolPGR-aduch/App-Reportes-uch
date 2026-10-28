@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from ipaddress import ip_address
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
@@ -41,6 +44,7 @@ from app.services.rate_limit import client_identifier, enforce_rate_limit
 from app.services.sessions import clear_session_cookies, create_session, set_session_cookies
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger("campus.accounts")
 
 
 def _ensure_unique_user(db: Session, *, campus_id: str, email: str) -> None:
@@ -61,8 +65,22 @@ def _ensure_unique_user(db: Session, *, campus_id: str, email: str) -> None:
 def bootstrap_admin(
     payload: RegisterRequest,
     response: Response,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> SessionResponse:
+    settings = get_settings()
+    if not settings.bootstrap_admin_enabled:
+        raise HTTPException(status_code=403, detail="Admin bootstrap is disabled")
+    if settings.app_env.lower() == "production":
+        try:
+            local_request = bool(request.client and ip_address(request.client.host).is_loopback)
+        except ValueError:
+            local_request = False
+        if not local_request:
+            raise HTTPException(status_code=403, detail="Admin bootstrap requires local access")
+    # Serializar los intentos iniciales para que dos peticiones concurrentes no
+    # creen simultáneamente cuentas administradoras.
+    db.execute(text("SELECT pg_advisory_xact_lock(2107290626)"))
     admin_exists = db.query(User).filter(User.role == UserRole.ADMIN).first()
     if admin_exists:
         raise HTTPException(
@@ -112,6 +130,8 @@ def register(
         identifier=client_identifier(request, payload.email.lower()),
         limit=settings.rate_limit_login,
     )
+    enforce_rate_limit(db, scope="register_ip", identifier=client_identifier(request),
+                       limit=settings.rate_limit_login * 5)
     verify_turnstile(turnstile_token, request)
     campus_id = payload.campus_id.strip()
     email = payload.email.strip().lower()
@@ -126,6 +146,7 @@ def register(
         password_hash=hash_password(payload.password),
         role=UserRole.STUDENT,
         status=UserStatus.INACTIVE,
+        email_verification_pending=True,
     )
     db.add(user)
     db.commit()
@@ -146,37 +167,59 @@ def register(
             )
         )
 
-    send_account_link(recipient=user.email, purpose="VERIFY_EMAIL", raw_token=raw_token)
+    try:
+        send_account_link(recipient=user.email, purpose="VERIFY_EMAIL", raw_token=raw_token)
+    except Exception:
+        logger.exception("verification_email_delivery_failed")
+        return MessageResponse(message="Account created. Email could not be sent; contact an administrator.")
     return MessageResponse(
         message="Account created. Verify your institutional email to activate it."
     )
 
 
 @router.post("/verify-email", response_model=MessageResponse)
-def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> MessageResponse:
+def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db), request: Request = None) -> MessageResponse:
+    if request is not None:
+        enforce_rate_limit(db, scope="verify_email", identifier=client_identifier(request),
+                           limit=get_settings().rate_limit_account_recovery)
     user = consume_account_token(db, raw_token=payload.token, purpose="VERIFY_EMAIL")
+    if user.status != UserStatus.INACTIVE or not user.email_verification_pending:
+        raise HTTPException(status_code=400, detail="Account cannot be verified")
     user.status = UserStatus.ACTIVE
+    user.email_verification_pending = False
     db.commit()
     return MessageResponse(message="Email verified. You can now sign in.")
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
-def resend_verification(payload: PasswordResetRequest, db: Session = Depends(get_db)) -> MessageResponse:
+def resend_verification(payload: PasswordResetRequest, db: Session = Depends(get_db), request: Request = None) -> MessageResponse:
+    if request is not None:
+        enforce_rate_limit(db, scope="resend_verification", identifier=client_identifier(request),
+                           limit=get_settings().rate_limit_account_recovery)
     user = db.query(User).filter(User.email == payload.email.strip().lower()).first()
-    if user and user.status == UserStatus.INACTIVE:
+    if user and user.status == UserStatus.INACTIVE and user.email_verification_pending:
         raw_token = issue_account_token(db, user=user, purpose="VERIFY_EMAIL")
         db.commit()
-        send_account_link(recipient=user.email, purpose="VERIFY_EMAIL", raw_token=raw_token)
+        try:
+            send_account_link(recipient=user.email, purpose="VERIFY_EMAIL", raw_token=raw_token)
+        except Exception:
+            logger.exception("verification_email_delivery_failed")
     return MessageResponse(message="If the account requires verification, an email has been sent.")
 
 
 @router.post("/password-reset", response_model=MessageResponse)
-def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)) -> MessageResponse:
+def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db), request: Request = None) -> MessageResponse:
+    if request is not None:
+        enforce_rate_limit(db, scope="password_reset", identifier=client_identifier(request),
+                           limit=get_settings().rate_limit_account_recovery)
     user = db.query(User).filter(User.email == payload.email.strip().lower()).first()
-    if user and email_delivery_configured():
+    if user and user.status == UserStatus.ACTIVE and email_delivery_configured():
         raw_token = issue_account_token(db, user=user, purpose="RESET_PASSWORD")
         db.commit()
-        send_account_link(recipient=user.email, purpose="RESET_PASSWORD", raw_token=raw_token)
+        try:
+            send_account_link(recipient=user.email, purpose="RESET_PASSWORD", raw_token=raw_token)
+        except Exception:
+            logger.exception("password_reset_email_delivery_failed")
     # La respuesta es siempre la misma, y por eso `email_delivery_configured()`
     # se consulta antes de enviar en vez de capturar el 503 despues: sin correo,
     # una direccion registrada respondia 503 y una inventada 200, con lo que
@@ -188,10 +231,16 @@ def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(
 def confirm_password_reset(
     payload: PasswordResetConfirmRequest,
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> MessageResponse:
+    if request is not None:
+        enforce_rate_limit(db, scope="password_reset_confirm", identifier=client_identifier(request),
+                           limit=get_settings().rate_limit_account_recovery)
     user = consume_account_token(db, raw_token=payload.token, purpose="RESET_PASSWORD")
+    if user.status != UserStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Account cannot reset password")
     user.password_hash = hash_password(payload.password)
-    user.status = UserStatus.ACTIVE
+    _revocar_otras_sesiones(db, user_id=user.id, conservar=None)
     db.commit()
     return MessageResponse(message="Password updated. You can now sign in.")
 
@@ -264,6 +313,8 @@ def login(
         identifier=client_identifier(request, payload.campus_id.lower()),
         limit=settings.rate_limit_login,
     )
+    enforce_rate_limit(db, scope="login_ip", identifier=client_identifier(request),
+                       limit=settings.rate_limit_login * 10)
     user = db.query(User).filter(User.campus_id == payload.campus_id).first()
     if user is None or user.status != UserStatus.ACTIVE:
         raise HTTPException(
@@ -276,6 +327,16 @@ def login(
 
     if password_needs_rehash(user.password_hash):
         user.password_hash = hash_password(payload.password)
+    # Al cambiar de cuenta en el mismo navegador, la sesión sustituida no debe
+    # quedar activa en el servidor. No se revoca si las credenciales fallan.
+    previous_token = request.cookies.get(settings.session_cookie_name)
+    if previous_token:
+        previous_session = db.query(AuthSession).filter(
+            AuthSession.token_hash == hash_opaque_token(previous_token),
+            AuthSession.revoked_at.is_(None),
+        ).first()
+        if previous_session:
+            previous_session.revoked_at = datetime.now(timezone.utc)
     token, _ = create_session(db, user)
     db.commit()
     csrf_token = set_session_cookies(response, token)

@@ -16,6 +16,12 @@ from app.services.storage import (
     _build_relative_path,
 )
 
+
+def test_local_storage_no_permite_archivos_hermanos(tmp_path):
+    almacen = LocalStorageProvider(tmp_path / "evidences")
+    assert almacen._resolve("other/file.txt") is None
+    assert almacen._resolve("evidences/../other/file.txt") is None
+
 CLAVE = re.compile(r"^evidences/\d{4}/\d{2}/\d{2}/[0-9a-f]{32}\.(jpg|png|webp)$")
 
 

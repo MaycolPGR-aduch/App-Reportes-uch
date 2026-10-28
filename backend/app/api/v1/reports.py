@@ -269,11 +269,11 @@ async def create_report(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    file_bytes = await photo.read()
+    max_size_bytes = settings.max_image_size_mb * 1024 * 1024
+    file_bytes = await photo.read(max_size_bytes + 1)
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Photo file is empty")
 
-    max_size_bytes = settings.max_image_size_mb * 1024 * 1024
     if len(file_bytes) > max_size_bytes:
         raise HTTPException(
             status_code=400,
@@ -291,14 +291,6 @@ async def create_report(
 
     storage = get_storage_provider()
     stored = None
-    try:
-        stored = storage.save_incident_image(
-            content=normalized_bytes,
-            mime_type=normalized_mime,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     modo = resolver_modo(settings.governance_mode)
     incident = Incident(
         reporter_id=current_user.id if current_user else None,
@@ -340,36 +332,22 @@ async def create_report(
     location.location_status = resolved_location.location_status
     location.location_confidence = resolved_location.location_confidence
 
-    evidence = IncidentEvidence(
-        incident_id=incident.id,
-        storage_path=stored.relative_path,
-        mime_type=stored.mime_type,
-        file_size_bytes=stored.size_bytes,
-        sha256_hash=stored.sha256_hash,
-        metadata_json={
-            "original_filename": photo.filename,
-            "saved_path": stored.absolute_path,
-            "reported_title": sanitized_title or None,
-        },
-    )
-    db.add_all([location, evidence])
-
-    # En modo manual se clasifica en sombra: la prediccion se guarda para el
-    # estudio pero nunca llega a quien decide. El trabajador tampoco toca la
-    # incidencia, asi que el brazo sigue siendo manual para la persona.
-    if se_clasifica(modo, en_sombra=settings.shadow_classification):
-        enqueue_job(
-            db,
-            incident_id=incident.id,
-            job_type=JobType.CLASSIFY_INCIDENT,
-            payload={
-                "source": "report_created",
-                "governance_mode": modo.value,
-                "shadow": not recomendacion_visible(modo),
-            },
-        )
-
     try:
+        stored = storage.save_incident_image(content=normalized_bytes, mime_type=normalized_mime)
+        evidence = IncidentEvidence(
+            incident_id=incident.id, storage_path=stored.relative_path,
+            mime_type=stored.mime_type, file_size_bytes=stored.size_bytes,
+            sha256_hash=stored.sha256_hash,
+            metadata_json={"original_filename": photo.filename, "saved_path": stored.absolute_path,
+                           "reported_title": sanitized_title or None},
+        )
+        db.add_all([location, evidence])
+        if se_clasifica(modo, en_sombra=settings.shadow_classification):
+            enqueue_job(
+                db, incident_id=incident.id, job_type=JobType.CLASSIFY_INCIDENT,
+                payload={"source": "report_created", "governance_mode": modo.value,
+                         "shadow": not recomendacion_visible(modo)},
+            )
         db.commit()
     except Exception:
         db.rollback()
@@ -644,16 +622,29 @@ def get_admin_incident_feed_image(
     return _feed_image_response(incident)
 
 
+def _public_community_viewer(request: Request, db: Session = Depends(get_db)) -> User | None:
+    # Una cuenta desactivada no obtiene privilegios, pero el mural es público.
+    try:
+        return get_optional_user(request, db)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise
+
+
 @router.get("/incidents/community", response_model=CommunityFeedResponse)
 def list_community_feed(
+    request: Request,
     status_filter: IncidentStatus | None = None,
     category: IncidentCategory | None = None,
     limit: int = 12,
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(_public_community_viewer),
 ) -> CommunityFeedResponse:
-    user = _require_student(current_user)
+    enforce_rate_limit(db, scope="community_read", identifier=client_identifier(request),
+                       limit=get_settings().rate_limit_community_reads, window_seconds=60)
+    user = current_user
     safe_limit, safe_offset = _safe_feed_limit_offset(limit, offset)
     query = db.query(Incident).filter(
         Incident.community_consent.is_(True),
@@ -682,15 +673,16 @@ def list_community_feed(
             .group_by(CommunityReaction.incident_id)
             .all()
         )
-        reacted_ids = {
-            incident_id
-            for (incident_id,) in db.query(CommunityReaction.incident_id)
-            .filter(
-                CommunityReaction.incident_id.in_(incident_ids),
-                CommunityReaction.user_id == user.id,
-            )
-            .all()
-        }
+        if user is not None and user.role == UserRole.STUDENT:
+            reacted_ids = {
+                incident_id
+                for (incident_id,) in db.query(CommunityReaction.incident_id)
+                .filter(
+                    CommunityReaction.incident_id.in_(incident_ids),
+                    CommunityReaction.user_id == user.id,
+                )
+                .all()
+            }
     return CommunityFeedResponse(
         total=total,
         items=[
@@ -704,7 +696,7 @@ def list_community_feed(
                 has_image=bool(incident.evidences),
                 reaction_count=reaction_counts.get(incident.id, 0),
                 reacted_by_me=incident.id in reacted_ids,
-                is_own_report=incident.reporter_id == user.id,
+                is_own_report=user is not None and incident.reporter_id == user.id,
             )
             for incident in incidents
         ],
@@ -750,10 +742,11 @@ def _reaction_state(db: Session, *, incident_id: UUID, user_id: UUID) -> Reactio
 @router.get("/incidents/community/{incident_id}/image")
 def get_community_feed_image(
     incident_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> Response:
-    _require_student(current_user)
+    enforce_rate_limit(db, scope="community_read", identifier=client_identifier(request),
+                       limit=get_settings().rate_limit_community_reads, window_seconds=60)
     return _feed_image_response(_get_visible_community_incident(db, incident_id))
 
 

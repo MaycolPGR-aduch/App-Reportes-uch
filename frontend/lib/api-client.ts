@@ -461,20 +461,30 @@ async function parseError(response: Response): Promise<never> {
  * pidiendo `/auth/me`--, pero no queda escrito en el disco del visitante.
  */
 let csrfEnMemoria: string | null = null;
+let generacionSesion = 0;
+
+function avisarCambioSesion(): void {
+  generacionSesion += 1;
+  try {
+    // Solo una señal aleatoria: jamás se comparte identidad ni tokens.
+    localStorage.setItem("campus-session-change", crypto.randomUUID());
+  } catch {
+    // El almacenamiento puede estar bloqueado; la sesión actual sigue funcionando.
+  }
+}
 
 export function recordarCsrf(token: string | null | undefined): void {
   csrfEnMemoria = token ?? null;
 }
 
 function tomarCsrf(): string | null {
-  if (csrfEnMemoria) return csrfEnMemoria;
   // Cuando comparten dominio --desarrollo local-- la cookie si es legible, y
   // sirve de respaldo si aun no se ha pedido /auth/me.
   const desdeCookie = document.cookie
     .split("; ")
     .find((item) => item.startsWith("campus_csrf="))
     ?.split("=", 2)[1];
-  return desdeCookie ? decodeURIComponent(desdeCookie) : null;
+  return desdeCookie ? decodeURIComponent(desdeCookie) : csrfEnMemoria;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -505,6 +515,7 @@ export async function login(campusId: string, password: string): Promise<Session
     body: JSON.stringify({ campus_id: campusId, password }),
   });
   recordarCsrf(session.csrf_token);
+  avisarCambioSesion();
   return session;
 }
 
@@ -549,9 +560,11 @@ export async function confirmPasswordReset(
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
+  const generacion = generacionSesion;
   const user = await request<CurrentUser>("/auth/me");
   // Recupera el testigo tras recargar la pagina, que es cuando se pierde el
   // que estaba en memoria.
+  if (generacion !== generacionSesion) throw new Error("La sesión cambió durante la consulta");
   recordarCsrf(user.csrf_token);
   return user;
 }
@@ -578,6 +591,7 @@ export async function revokeOtherSessions(): Promise<{ message: string }> {
 export async function logout(): Promise<{ message: string }> {
   const result = await request<{ message: string }>("/auth/logout", { method: "POST" });
   recordarCsrf(null);
+  avisarCambioSesion();
   return result;
 }
 
@@ -652,7 +666,7 @@ export async function listCommunityFeed(params: FeedFilters = {}): Promise<Commu
 }
 
 async function getPrivateImageObjectUrl(path: string): Promise<string> {
-  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include", cache: "no-store" });
   if (!response.ok) return parseError(response);
   return URL.createObjectURL(await response.blob());
 }

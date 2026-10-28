@@ -29,7 +29,8 @@ export function PwaRegister() {
         // Entornos sin soporte: la aplicación funciona igual, sin modo offline.
       }
     };
-    window.addEventListener("load", onLoad);
+    if (document.readyState === "complete") void onLoad();
+    else window.addEventListener("load", onLoad);
     return () => window.removeEventListener("load", onLoad);
   }, []);
 

@@ -71,7 +71,7 @@ class LocalStorageProvider(StorageProvider):
         basta una fila manipulada para que `../../` apunte fuera del almacén.
         """
         candidate = (self.base_dir.parent / relative_path).resolve()
-        if self.base_dir.parent.resolve() not in candidate.parents:
+        if self.base_dir.resolve() not in candidate.parents:
             return None
         return candidate
 

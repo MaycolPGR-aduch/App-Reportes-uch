@@ -90,6 +90,10 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
             )
 
         try:
+            if not image_bytes or not image_mime_type:
+                raise AIClassificationError(
+                    "Evidence unavailable or exceeds AI image size limit; manual review required", []
+                )
             result = classify_incident(
                 description=incident.description,
                 user_category=incident.category,
@@ -179,9 +183,8 @@ def _run_iteration(*, worker_id: str, poll: float) -> None:
                 error_message=str(exc),
                 retry_delay_seconds=settings.classification_retry_delay_seconds,
             )
-            if job.status.value == "FAILED" and recomendacion_visible(
-                incident.governance_mode
-            ):
+            if (job.status.value == "FAILED" and recomendacion_visible(incident.governance_mode)
+                    and incident.status == IncidentStatus.REPORTED):
                 incident.status = IncidentStatus.IN_REVIEW
             db.commit()
             logger.warning(

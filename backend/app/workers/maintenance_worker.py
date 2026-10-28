@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from app.core.config import get_settings
 from app.db import base as _models_registry  # noqa: F401
 from app.db.session import SessionLocal
-from app.services.maintenance import backup_evidences, purge_expired_incidents
+from app.services.maintenance import backup_evidences, drain_evidence_deletions, purge_expired_incidents
 from app.services.monitoring import revisar_plazos, revisar_salud
 
 logger = logging.getLogger("campus.workers.maintenance")
@@ -36,19 +36,31 @@ def run_worker() -> None:
     # vuelta ejecute todo: preferible a saltarse una revisión por prudencia.
     ultima_retencion: datetime | None = None
     ultima_vigilancia: datetime | None = None
+    ultimo_respaldo: datetime | None = None
+    intervalo_respaldo = INTERVALO_RETENCION
 
     while True:
         try:
             ahora = datetime.now(timezone.utc)
 
+            with SessionLocal() as db:
+                drain_evidence_deletions(db)
+
             if _toca(ultima_retencion, INTERVALO_RETENCION, ahora):
                 with SessionLocal() as db:
                     eliminadas = purge_expired_incidents(db)
-                respaldadas = backup_evidences()
                 ultima_retencion = ahora
-                logger.info(
-                    "retencion_completa eliminadas=%s respaldadas=%s", eliminadas, respaldadas
-                )
+                logger.info("retencion_completa eliminadas=%s", eliminadas)
+
+            if _toca(ultimo_respaldo, intervalo_respaldo, ahora):
+                try:
+                    respaldadas = backup_evidences()
+                    intervalo_respaldo = INTERVALO_RETENCION
+                    logger.info("respaldo_evidencias_completo archivos=%s", respaldadas)
+                except Exception:
+                    intervalo_respaldo = timedelta(hours=1)
+                    logger.exception("respaldo_evidencias_fallido")
+                ultimo_respaldo = ahora
 
             if _toca(ultima_vigilancia, intervalo_vigilancia, ahora):
                 with SessionLocal() as db:

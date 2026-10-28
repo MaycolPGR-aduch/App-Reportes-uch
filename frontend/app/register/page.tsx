@@ -64,7 +64,7 @@ function RegisterForm() {
           <Link className="font-semibold text-brand-text hover:underline" href={`/login${consulta}`}>
             Ya tengo cuenta
           </Link>
-          <Link className="font-semibold text-brand-text hover:underline" href="/">
+          <Link className="font-semibold text-brand-text hover:underline" href="/reportar">
             Reportar sin cuenta
           </Link>
         </>

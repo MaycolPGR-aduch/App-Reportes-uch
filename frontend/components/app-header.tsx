@@ -65,6 +65,9 @@ export function AppHeader() {
 
         <nav aria-label="Principal" className="ml-auto flex items-center gap-1">
           <NavLink href="/" active={pathname === "/"}>
+            Comunidad
+          </NavLink>
+          <NavLink href="/reportar" active={pathname === "/reportar"}>
             Reportar
           </NavLink>
 

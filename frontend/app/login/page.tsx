@@ -33,7 +33,8 @@ function LoginForm() {
       else if (response.role === "ADMIN") router.push("/dashboard/admin");
       else router.push("/dashboard");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo iniciar sesión");
+      const message = e instanceof Error ? e.message : "No se pudo iniciar sesión";
+      setError(`${message}. Si había una sesión anterior, puede seguir activa.`);
       setLoading(false);
     }
   };

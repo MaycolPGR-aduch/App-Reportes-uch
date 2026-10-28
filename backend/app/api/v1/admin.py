@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.ai_metric import AIMetric
+from app.models.auth_session import AuthSession
 from app.models.assignment import IncidentAssignment
 from app.models.campus_zone import CampusZone
 from app.models.enums import (
@@ -699,8 +700,13 @@ def update_user_admin(
         if user.id == current_admin.id and payload.status != UserStatus.ACTIVE:
             raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta")
         user.status = payload.status
+        user.email_verification_pending = False
     if payload.password:
         user.password_hash = hash_password(payload.password)
+    if payload.status == UserStatus.INACTIVE or payload.password:
+        db.query(AuthSession).filter(
+            AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)
+        ).update({AuthSession.revoked_at: datetime.now(timezone.utc)}, synchronize_session=False)
 
     if _normalized_email(user.email) != previous_email:
         related_staff_profiles = (
@@ -787,6 +793,10 @@ def ban_user_admin(
     if user.id == current_admin.id:
         raise HTTPException(status_code=400, detail="No puedes banear tu propia cuenta")
     user.status = UserStatus.INACTIVE
+    user.email_verification_pending = False
+    db.query(AuthSession).filter(
+        AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)
+    ).update({AuthSession.revoked_at: datetime.now(timezone.utc)}, synchronize_session=False)
     staff_profiles = (
         db.query(Responsible)
         .filter(func.lower(Responsible.email) == _normalized_email(user.email))
@@ -809,6 +819,7 @@ def unban_user_admin(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.status = UserStatus.ACTIVE
+    user.email_verification_pending = False
     if user.role == UserRole.STAFF:
         staff_profiles = (
             db.query(Responsible)

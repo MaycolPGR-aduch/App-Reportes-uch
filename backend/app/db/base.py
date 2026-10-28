@@ -10,6 +10,7 @@ from app.models.system_alert import SystemAlert
 from app.models.triage_decision import TriageDecision
 from app.models.status_event import IncidentStatusEvent
 from app.models.evidence import IncidentEvidence
+from app.models.evidence_deletion import EvidenceDeletion
 from app.models.incident import Incident
 from app.models.job import Job
 from app.models.location import IncidentLocation
@@ -29,6 +30,7 @@ __all__ = [
     "Incident",
     "IncidentLocation",
     "IncidentEvidence",
+    "EvidenceDeletion",
     "Responsible",
     "IncidentAssignment",
     "Notification",

@@ -18,6 +18,7 @@ class Settings:
     app_debug: bool
     database_url: str
     auto_create_schema: bool
+    bootstrap_admin_enabled: bool
     jwt_secret: str
     jwt_exp_minutes: int
     session_cookie_name: str
@@ -30,6 +31,8 @@ class Settings:
     require_turnstile: bool
     rate_limit_login: int
     rate_limit_public_report: int
+    rate_limit_account_recovery: int
+    rate_limit_community_reads: int
     max_image_pixels: int
     job_lease_seconds: int
     retention_days: int
@@ -87,11 +90,10 @@ def get_settings() -> Settings:
         os.getenv("LOCAL_STORAGE_PATH", "./data/evidences")
     ).resolve()
 
-    cors_origins = _as_list(os.getenv("CORS_ORIGINS"))
-    if not cors_origins:
-        cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
-
     app_env = os.getenv("APP_ENV", "development")
+    cors_origins = _as_list(os.getenv("CORS_ORIGINS"))
+    if not cors_origins and app_env.lower() != "production":
+        cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
     jwt_secret = os.getenv("JWT_SECRET")
     if app_env.lower() == "production" and (
         not jwt_secret or jwt_secret == "change-this-secret-in-production"
@@ -99,6 +101,26 @@ def get_settings() -> Settings:
         raise RuntimeError("JWT_SECRET must be configured in production")
     if app_env.lower() == "production" and (not cors_origins or "*" in cors_origins):
         raise RuntimeError("CORS_ORIGINS must contain explicit origins in production")
+    if app_env.lower() == "production":
+        if not _as_list(os.getenv("TRUSTED_HOSTS")) or "*" in _as_list(os.getenv("TRUSTED_HOSTS")):
+            raise RuntimeError("TRUSTED_HOSTS is required in production")
+        if not _as_list(os.getenv("ALLOWED_EMAIL_DOMAINS")):
+            raise RuntimeError("ALLOWED_EMAIL_DOMAINS is required in production")
+        if not os.getenv("BREVO_API_KEY") or not os.getenv("BREVO_FROM_EMAIL"):
+            raise RuntimeError("Brevo email configuration is required in production")
+        if _as_bool(os.getenv("REQUIRE_TURNSTILE"), default=True) and not os.getenv("TURNSTILE_SECRET_KEY"):
+            raise RuntimeError("TURNSTILE_SECRET_KEY is required in production")
+        if not _as_bool(os.getenv("COOKIE_SECURE"), default=True):
+            raise RuntimeError("COOKIE_SECURE must be enabled in production")
+        if _as_bool(os.getenv("AUTO_CREATE_SCHEMA"), default=False):
+            raise RuntimeError("AUTO_CREATE_SCHEMA must be disabled in production")
+        if _as_bool(os.getenv("APP_DEBUG"), default=False):
+            raise RuntimeError("APP_DEBUG must be disabled in production")
+    storage_backend = os.getenv("STORAGE_BACKEND", "local").strip().lower()
+    if storage_backend not in {"local", "s3"}:
+        raise RuntimeError("STORAGE_BACKEND must be local or s3")
+    if storage_backend == "s3" and not os.getenv("S3_BUCKET"):
+        raise RuntimeError("S3_BUCKET is required when STORAGE_BACKEND=s3")
 
     return Settings(
         app_name=os.getenv("APP_NAME", "Campus Incidents API"),
@@ -109,6 +131,7 @@ def get_settings() -> Settings:
             "postgresql+psycopg2://postgres:postgres@localhost:5432/campus_incidents",
         ),
         auto_create_schema=_as_bool(os.getenv("AUTO_CREATE_SCHEMA"), default=False),
+        bootstrap_admin_enabled=_as_bool(os.getenv("BOOTSTRAP_ADMIN_ENABLED"), default=app_env.lower() != "production"),
         jwt_secret=jwt_secret or "development-only-secret-change-me",
         jwt_exp_minutes=int(os.getenv("JWT_EXP_MINUTES", "480")),
         session_cookie_name=os.getenv("SESSION_COOKIE_NAME", "campus_session"),
@@ -121,12 +144,14 @@ def get_settings() -> Settings:
         require_turnstile=_as_bool(os.getenv("REQUIRE_TURNSTILE"), default=app_env.lower() == "production"),
         rate_limit_login=int(os.getenv("RATE_LIMIT_LOGIN", "5")),
         rate_limit_public_report=int(os.getenv("RATE_LIMIT_PUBLIC_REPORT", "3")),
+        rate_limit_account_recovery=int(os.getenv("RATE_LIMIT_ACCOUNT_RECOVERY", "5")),
+        rate_limit_community_reads=int(os.getenv("RATE_LIMIT_COMMUNITY_READS", "1200")),
         max_image_pixels=int(os.getenv("MAX_IMAGE_PIXELS", "25000000")),
         job_lease_seconds=int(os.getenv("JOB_LEASE_SECONDS", "300")),
         retention_days=int(os.getenv("RETENTION_DAYS", "180")),
         backup_s3_bucket=os.getenv("BACKUP_S3_BUCKET"),
         backup_s3_prefix=os.getenv("BACKUP_S3_PREFIX", "campus-evidences"),
-        storage_backend=os.getenv("STORAGE_BACKEND", "local").strip().lower(),
+        storage_backend=storage_backend,
         s3_bucket=os.getenv("S3_BUCKET"),
         s3_prefix=os.getenv("S3_PREFIX", "evidences"),
         s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),

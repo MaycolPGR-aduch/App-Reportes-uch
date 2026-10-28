@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Enum as SAEnum
+from sqlalchemy import Boolean, Enum as SAEnum
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,6 +30,9 @@ class User(Base, TimestampMixin):
     )
     status: Mapped[UserStatus] = mapped_column(
         SAEnum(UserStatus, name="user_status"), default=UserStatus.ACTIVE, nullable=False
+    )
+    email_verification_pending: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     incidents: Mapped[list["Incident"]] = relationship(back_populates="reporter")

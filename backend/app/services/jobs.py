@@ -71,11 +71,14 @@ def recover_expired_leases(db: Session, *, lease_seconds: int) -> int:
         text(
             """
             UPDATE jobs
-            SET status = 'PENDING', locked_at = NULL, locked_by = NULL,
+            SET status = CASE WHEN attempts >= max_attempts THEN 'FAILED'::job_status
+                              ELSE 'PENDING'::job_status END,
+                locked_at = NULL, locked_by = NULL,
                 run_after = now(), updated_at = now(),
                 last_error = COALESCE(last_error, 'Worker lease expired')
-            WHERE status = 'PROCESSING'
-              AND locked_at < now() - (:lease_seconds * interval '1 second')
+            WHERE (status = 'PROCESSING'
+              AND locked_at < now() - (:lease_seconds * interval '1 second'))
+              OR (status = 'PENDING' AND attempts >= max_attempts)
             """
         ),
         {"lease_seconds": lease_seconds},

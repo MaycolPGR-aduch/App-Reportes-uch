@@ -35,11 +35,11 @@ def consume_account_token(db: Session, *, raw_token: str, purpose: str) -> User:
         AccountToken.purpose == purpose,
         AccountToken.used_at.is_(None),
         AccountToken.expires_at > datetime.now(timezone.utc),
-    ).first()
+    ).with_for_update().first()
     if token is None:
         raise HTTPException(status_code=400, detail="Invalid or expired account token")
     token.used_at = datetime.now(timezone.utc)
-    user = db.get(User, token.user_id)
+    user = db.get(User, token.user_id, with_for_update=True)
     if user is None:
         raise HTTPException(status_code=400, detail="Account no longer exists")
     return user

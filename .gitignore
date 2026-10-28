@@ -9,6 +9,7 @@ Thumbs.db
 
 # Python backend
 backend/venv/
+backend/venv312/
 backend/.venv/
 backend/__pycache__/
 backend/.pytest_cache/

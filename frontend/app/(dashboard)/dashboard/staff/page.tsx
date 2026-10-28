@@ -69,7 +69,6 @@ export default function StaffDashboardPage() {
   const [completingAssignmentId, setCompletingAssignmentId] = useState<string | null>(null);
 
   const clearSession = () => {
-    void logout().catch(() => undefined);
     setToken(null);
     setCampusId(null);
   };

@@ -160,6 +160,14 @@ def _send_via_brevo(*, recipient: str, subject: str, html: str) -> EmailSendResu
             provider_message_id=None,
             error_message=f"Brevo error {response.status_code}: {response.text[:250]}",
         )
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+        # El proveedor pudo aceptar el correo antes de perder la respuesta.
+        # SENDING fuerza revisión humana en lugar de reenviar automáticamente.
+        return EmailSendResult(
+            status=NotificationStatus.SENDING,
+            provider_message_id=None,
+            error_message=f"Delivery status uncertain: {type(exc).__name__}",
+        )
     except Exception as exc:
         return EmailSendResult(
             status=NotificationStatus.FAILED,
